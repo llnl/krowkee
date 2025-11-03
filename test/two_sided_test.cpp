@@ -65,7 +65,7 @@ struct init_check {
 
       CHECK_CONDITION(init_empty == true, "initial empty");
 
-      sketch.insert(1);
+      sketch.insert({1, 1});
       bool not_empty = sketch.empty();
       if (not_empty == true) {
         std::cout << "sketch: \n" << sketch << std::endl;
@@ -82,12 +82,14 @@ struct init_check {
       sketch_type        sketch_1(transform_ptr_1);
       sketch_type        sketch_2(transform_ptr_2);
       for (int i(0); i < 1000; i++) {
-        sketch_1.insert(i);
-        sketch_2.insert(i);
+        for (int j(0); j < 1000; j++) {
+          sketch_1.insert({i, j});
+          sketch_2.insert({i, j});
+        }
       }
       bool constructors_match = sketch_1 == sketch_2;
       if (constructors_match == false) {
-        std::cout << "sketch_1 : " << sketch_1 << std::endl;
+        std::cout << "sketch_1 : " << sketch_1 << std::endl << std::endl;
         std::cout << "sketch_2 : " << sketch_2 << std::endl;
       }
       CHECK_CONDITION(constructors_match == true,
@@ -96,7 +98,10 @@ struct init_check {
     {
       transform_ptr_type transform_ptr(_make_ptr(0));
       sketch_type        sketch(transform_ptr);
-      for (int i(0); i < 1000; sketch.insert(i++)) {
+      for (int i(0); i < 1000; ++i) {
+        for (int j(0); j < 1000; ++j) {
+          sketch.insert({i, j});
+        }
       }
       sketch_type sketch2(sketch);
       bool        copy_matches = sketch == sketch2;
@@ -109,7 +114,10 @@ struct init_check {
     {
       transform_ptr_type transform_ptr(_make_ptr(0));
       sketch_type        sketch(transform_ptr);
-      for (int i(0); i < 1000; sketch.insert(i++)) {
+      for (int i(0); i < 1000; ++i) {
+        for (int j(0); j < 1000; ++j) {
+          sketch.insert({i, j});
+        }
       }
       sketch_type sketch2      = sketch;
       bool        swap_matches = sketch == sketch2;

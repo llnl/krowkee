@@ -145,6 +145,25 @@ class Sketch {
     (*_transform_ptr)(_container, args...);
   }
 
+  /**
+   * @brief Insert item into registers using sketch functor, assuming a tuple of
+   * indices as the first argument.
+   *
+   * Example could involve `({i, j}, multiplicity)` where `i` and `j` are the
+   * row and columnn indices of the matrix insertion, respectively, and
+   * `multiplicity` is the number of insert repetitions to perform.
+   *
+   * @tparam ItemArgs types of parameters of the stream object to be inserted.
+   * Will be used to construct an krowkee::stream::Element object.
+   * @param indices Describes data structure indices to be inserted.
+   * @param args Addtional arguments describing the stream object.
+   */
+  template <typename... ItemArgs>
+  constexpr void insert(const std::pair<std::uint64_t, std::uint64_t> &indices,
+                        const ItemArgs &...args) {
+    (*_transform_ptr)(_container, indices, args...);
+  }
+
   //////////////////////////////////////////////////////////////////////////////
   // Compactify
   //////////////////////////////////////////////////////////////////////////////
