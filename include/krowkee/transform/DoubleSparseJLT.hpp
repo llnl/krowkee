@@ -142,11 +142,13 @@ class DoubleSparseJLT {
     }
     for (int i(0); i < ReplicationCount; ++i) {
       for (int j(0); j < ReplicationCount; ++j) {
-        register_type &reg      = registers[row_indices[i]][col_indices[j]];
+        const std::pair<std::uint64_t, std::uint64_t> indices = {
+            row_indices[i], col_indices[j]};
+        register_type &reg      = registers[indices];
         auto           polarity = row_polarities[i] * col_polarities[j];
-        merge_type()(reg, polarity * stream_element.multiplicity);
+        reg = merge_type()(reg, polarity * stream_element.multiplicity);
         if (reg == 0) {
-          registers.erase(row_indices[i], col_indices[j]);
+          registers.erase(indices);
         }
       }
     }
@@ -218,7 +220,7 @@ class DoubleSparseJLT {
     return ss.str();
   }
 
-  constexpr bool same_hashes(const self_type &rhs) {
+  constexpr bool same_hashes(const self_type &rhs) const {
     for (int i(0); i < ReplicationCount; ++i) {
       if (_row_hashes[i] != rhs._row_hashes[i]) {
         return false;

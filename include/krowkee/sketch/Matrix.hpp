@@ -138,7 +138,7 @@ class Matrix {
   // Erase
   //////////////////////////////////////////////////////////////////////////////
 
-  constexpr void erase(const std::uint64_t index) {}
+  constexpr void erase(const std::pair<std::uint64_t, std::uint64_t> indices) {}
 
   //////////////////////////////////////////////////////////////////////////////
   // Merge operators
@@ -218,36 +218,35 @@ class Matrix {
     return std::cend(_registers);
   }
 
-  constexpr std::uint64_t get_index(const std::uint64_t row_index,
-                                    const std::uint64_t col_index) const {
+  constexpr std::uint64_t get_index(
+      const std::pair<std::uint64_t, std::uint64_t> &indices) const {
+    const std::uint64_t &row_index = indices.first;
+    const std::uint64_t &col_index = indices.second;
     return row_index * _row_count + col_index;
   }
 
   /**
-   * @brief Const access Matrix at `index`.
+   * @brief Const access Matrix at `indices` pair.
    *
-   * @param row_index The row index of the underlying matrix to index. Must be
-   * less than `row_count`.
-   * @param col_index The column index of the underlying matrix to index. Must
-   * be less than `col_count`.
+   * @param indices The row and column indices of the underlying matrix to
+   * index. Must be less than `row_count` and `col_count`, respectively.
    * @return constexpr const register_type& A const reference to the object at
    * the indicated register.
    */
-  constexpr const register_type &operator()(
-      const std::uint64_t row_index, const std::uint64_t col_index) const {
-    return _registers.get(get_index(row_index, col_index));
+  constexpr const register_type &operator[](
+      const std::pair<std::uint64_t, std::uint64_t> &indices) const {
+    return _registers.get(get_index(indices));
   }
-
   /**
    * @brief Access Dense at `index`.
    *
-   * @param index The index of the underlying vector to index. Must be less than
-   * `size`.
+   * @param indices The row and column indices of the underlying matrix to
+   * index. Must be less than `row_count` and `col_count`, respectively.
    * @return register_type& A reference to the object at the indicated register.
    */
-  register_type &operator()(const std::uint64_t row_index,
-                            const std::uint64_t col_index) {
-    return _registers.at(get_index(row_index, col_index));
+  register_type &operator[](
+      const std::pair<std::uint64_t, std::uint64_t> &indices) {
+    return _registers.at(get_index(indices));
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -380,12 +379,12 @@ class Matrix {
       if (col_idx == sk.col_count()) {
         col_idx = 0;
         ++row_idx;
+        os << "\n";
       }
       if (col_idx != 0) {
         os << " ";
       }
-      os << "(" << col_idx++ << "," << col_idx++ << "," << std::int64_t(p)
-         << ")";
+      os << "(" << row_idx << "," << col_idx++ << "," << std::int64_t(p) << ")";
     });
     return os;
   }
