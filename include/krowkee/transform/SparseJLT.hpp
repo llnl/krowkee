@@ -60,8 +60,8 @@ class SparseJLT {
    *
    * Depending on the hash functor to be used, the effective embedding dimension
    * (returned by `this->size()`) may be rounded up to the next power of two.
-   * Further, we are assuming no redundancy. Each insert is only hashed to one
-   * register location.
+   * Each insert is hashed to one register location per ReplicationCount
+   * register replica.
    *
    * @note This behavior may change in the future.
    *

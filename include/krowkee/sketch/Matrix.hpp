@@ -39,13 +39,14 @@ class Matrix {
   using self_type      = Matrix<register_type, MergeOp>;
 
  protected:
-  registers_type _registers;
   std::size_t    _row_count;
   std::size_t    _col_count;
+  registers_type _registers;
 
  public:
   /**
-   * @brief Construct a new Matrix container object
+   * @brief Construct a new Matrix container object. Currently assuming that
+   * Matrix objects are always square.
    *
    * @tparam Args Other args (ignored)
    * @param size The number of registers, equal to the range size of the sketch
@@ -53,11 +54,8 @@ class Matrix {
    * @param args Ignored by Matrix.
    */
   template <typename... Args>
-  Matrix(const std::size_t row_count, const std::size_t col_count,
-         const Args &...args)
-      : _row_count(row_count),
-        _col_count(col_count),
-        _registers(row_count * col_count) {}
+  Matrix(const std::size_t size, const Args &...args)
+      : _row_count(size), _col_count(size), _registers(size * size) {}
 
   /**
    * @brief Copy constructor.

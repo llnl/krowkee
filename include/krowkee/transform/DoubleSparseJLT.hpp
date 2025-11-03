@@ -58,8 +58,15 @@ class DoubleSparseJLT {
    *
    * Depending on the hash functor to be used, the effective embedding dimension
    * (returned by `this->size()`) may be rounded up to the next power of two.
-   * Further, we are assuming no redundancy. Each insert is only hashed to one
-   * register location.
+   * Each insert is hashed to one row and one column location for each
+   * combination of ReplicationCount register replicas in the rows and columns
+   * of the two-sided sketch. E.g., an insert to a sketch with whose row and
+   * columns feature 4 replications will result in updating 16 total indices in
+   * the matrix data structure.
+   *
+   * The implementation currently assumes that the row and column hashes use the
+   * same functional form, meaning that the underlying Matrix data structure
+   * will always be square.
    *
    * @note This behavior may change in the future.
    *
