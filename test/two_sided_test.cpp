@@ -155,16 +155,6 @@ void print_help(char *exe_name) {
                "transforms\n"
             << "\t-d, --domain <int>             - domain of sketch transform\n"
             << "\t-b, --observation_count <int>  - number of sketches to test\n"
-            << "\t-o, --compaction-thresh <int>  - compaction threshold\n"
-            << "\t-p, --promotion-thresh <int>   - promotion threshold\n"
-            << "\t-t, --sketch-type <str>        - sketch type "
-               "(cst, sparse_cst, promotable_cst, fwht)\n"
-            << "\t-m, --map-type <str>           - map type "
-#if __has_include(<boost/container/flat_map.hpp>)
-               "(std, boost)\n"
-#else
-               "(std)\n"
-#endif
             << "\t-s, --seed <int>               - random seed\n"
             << "\t-v, --verbose                  - print additional debug "
                "information.\n"
