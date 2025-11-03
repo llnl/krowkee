@@ -9,7 +9,6 @@
 #include <sketch_types.hpp>
 
 #include <krowkee/hash/hash.hpp>
-#include <krowkee/util/cmap_types.hpp>
 #include <krowkee/util/runtime.hpp>
 #include <krowkee/util/sketch_types.hpp>
 
@@ -29,7 +28,6 @@ using krowkee::make_shared_functor;
 using krowkee::print_line;
 
 using sketch_impl_type = krowkee::util::sketch_impl_type;
-using cmap_impl_type   = krowkee::util::cmap_impl_type;
 
 /**
  * Struct bundling the experiment parameters.
@@ -42,7 +40,6 @@ struct Parameters {
   std::uint64_t    observation_count;
   std::uint64_t    seed;
   sketch_impl_type sketch_impl;
-  cmap_impl_type   cmap_impl;
   bool             verbose;
 };
 
@@ -146,16 +143,16 @@ void perform_tests(const Parameters &params) {
   std::cout << std::endl << std::endl;
 
   do_test<init_check<sketch_type, MakePtrFunc>>(params);
-//   do_test<ingest_check<sketch_type, MakePtrFunc>>(params);
-//   do_test<bad_merge_check<sketch_type, MakePtrFunc>>(params);
-//   do_test<good_merge_check<sketch_type, MakePtrFunc>>(params);
-// #if __has_include(<cereal/cereal.hpp>)
-//   do_test<serialize_check<sketch_type, MakePtrFunc>>(params);
-// #endif
-//   if (params.sketch_impl == sketch_impl_type::promotable_cst &&
-//       params.promotion_threshold < params.range_size) {
-//     do_test<promotion_check<sketch_type, MakePtrFunc>>(params);
-//   }
+  //   do_test<ingest_check<sketch_type, MakePtrFunc>>(params);
+  //   do_test<bad_merge_check<sketch_type, MakePtrFunc>>(params);
+  //   do_test<good_merge_check<sketch_type, MakePtrFunc>>(params);
+  // #if __has_include(<cereal/cereal.hpp>)
+  //   do_test<serialize_check<sketch_type, MakePtrFunc>>(params);
+  // #endif
+  //   if (params.sketch_impl == sketch_impl_type::promotable_cst &&
+  //       params.promotion_threshold < params.range_size) {
+  //     do_test<promotion_check<sketch_type, MakePtrFunc>>(params);
+  //   }
 }
 
 void print_help(char *exe_name) {
@@ -195,15 +192,14 @@ void parse_args(int argc, char **argv, Parameters &params) {
         {"domain", required_argument, NULL, 'd'},
         {"observation-count", required_argument, NULL, 'b'},
         {"sketch-type", required_argument, NULL, 't'},
-        {"map-type", required_argument, NULL, 'm'},
         {"seed", required_argument, NULL, 's'},
         {"verbose", no_argument, NULL, 'v'},
         {"help", no_argument, NULL, 'h'},
         {NULL, 0, NULL, 0}};
 
     int curind = optind;
-    c = getopt_long(argc, argv, "-:c:r:R:d:b:t:m:s:vh", long_options,
-                    &option_index);
+    c          = getopt_long(argc, argv, "-:c:r:R:d:b:t:s:vh", long_options,
+                             &option_index);
     if (c == -1) {
       break;
     }
@@ -241,9 +237,6 @@ void parse_args(int argc, char **argv, Parameters &params) {
       case 't':
         params.sketch_impl = krowkee::util::get_sketch_impl_type(optarg);
         break;
-      case 'm':
-        params.cmap_impl = krowkee::util::get_cmap_impl_type(optarg);
-        break;
       case 's':
         params.seed = std::atol(optarg);
         break;
@@ -276,25 +269,7 @@ struct choose_tests {
       perform_tests<Dense32SparseJLT<RangeSize, ReplicationCount>,
                     make_ptr_functor>(params);
     } else if (params.sketch_impl == sketch_impl_type::sparse_cst) {
-      if (params.cmap_impl == cmap_impl_type::std) {
-        perform_tests<MapSparse32SparseJLT<RangeSize, ReplicationCount>,
-                      make_ptr_functor>(params);
-#if __has_include(<boost/container/flat_map.hpp>)
-      } else if (params.cmap_impl == cmap_impl_type::boost) {
-        perform_tests<FlatMapSparse32SparseJLT<RangeSize, ReplicationCount>,
-                      make_ptr_functor>(params);
-#endif
-      }
     } else if (params.sketch_impl == sketch_impl_type::promotable_cst) {
-      if (params.cmap_impl == cmap_impl_type::std) {
-        perform_tests<MapPromotable32SparseJLT<RangeSize, ReplicationCount>,
-                      make_ptr_functor>(params);
-#if __has_include(<boost/container/flat_map.hpp>)
-      } else if (params.cmap_impl == cmap_impl_type::boost) {
-        perform_tests<FlatMapPromotable32SparseJLT<RangeSize, ReplicationCount>,
-                      make_ptr_functor>(params);
-#endif
-      }
     } else if (params.sketch_impl == sketch_impl_type::fwht) {
       perform_tests<Dense32FWHT<RangeSize, ReplicationCount>, make_ptr_functor>(
           params);
@@ -330,7 +305,6 @@ int main(int argc, char **argv) {
   std::uint64_t    observation_count(16);
   std::uint64_t    seed(krowkee::hash::default_seed);
   sketch_impl_type sketch_impl(sketch_impl_type::cst);
-  cmap_impl_type   cmap_impl(cmap_impl_type::std);
   bool             verbose(false);
   bool             do_all(argc == 1);
 
@@ -341,7 +315,6 @@ int main(int argc, char **argv) {
                     observation_count,
                     seed,
                     sketch_impl,
-                    cmap_impl,
                     verbose};
 
   parse_args(argc, argv, params);
