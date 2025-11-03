@@ -10,7 +10,6 @@
 
 #include <krowkee/hash/hash.hpp>
 #include <krowkee/util/runtime.hpp>
-#include <krowkee/util/sketch_types.hpp>
 
 #include <getopt.h>
 #include <stdio.h>
@@ -27,20 +26,17 @@ using krowkee::do_test;
 using krowkee::make_shared_functor;
 using krowkee::print_line;
 
-using sketch_impl_type = krowkee::util::sketch_impl_type;
-
 /**
  * Struct bundling the experiment parameters.
  */
 struct Parameters {
-  std::uint64_t    count;
-  std::uint64_t    range_size;
-  std::uint64_t    replication_count;
-  std::uint64_t    domain_size;
-  std::uint64_t    observation_count;
-  std::uint64_t    seed;
-  sketch_impl_type sketch_impl;
-  bool             verbose;
+  std::uint64_t count;
+  std::uint64_t range_size;
+  std::uint64_t replication_count;
+  std::uint64_t domain_size;
+  std::uint64_t observation_count;
+  std::uint64_t seed;
+  bool          verbose;
 };
 
 /**
@@ -149,10 +145,6 @@ void perform_tests(const Parameters &params) {
   // #if __has_include(<cereal/cereal.hpp>)
   //   do_test<serialize_check<sketch_type, MakePtrFunc>>(params);
   // #endif
-  //   if (params.sketch_impl == sketch_impl_type::promotable_cst &&
-  //       params.promotion_threshold < params.range_size) {
-  //     do_test<promotion_check<sketch_type, MakePtrFunc>>(params);
-  //   }
 }
 
 void print_help(char *exe_name) {
@@ -191,14 +183,13 @@ void parse_args(int argc, char **argv, Parameters &params) {
         {"replication", required_argument, NULL, 'R'},
         {"domain", required_argument, NULL, 'd'},
         {"observation-count", required_argument, NULL, 'b'},
-        {"sketch-type", required_argument, NULL, 't'},
         {"seed", required_argument, NULL, 's'},
         {"verbose", no_argument, NULL, 'v'},
         {"help", no_argument, NULL, 'h'},
         {NULL, 0, NULL, 0}};
 
     int curind = optind;
-    c          = getopt_long(argc, argv, "-:c:r:R:d:b:t:s:vh", long_options,
+    c          = getopt_long(argc, argv, "-:c:r:R:d:b:s:vh", long_options,
                              &option_index);
     if (c == -1) {
       break;
@@ -234,9 +225,6 @@ void parse_args(int argc, char **argv, Parameters &params) {
       case 'b':
         params.observation_count = std::atoll(optarg);
         break;
-      case 't':
-        params.sketch_impl = krowkee::util::get_sketch_impl_type(optarg);
-        break;
       case 's':
         params.seed = std::atol(optarg);
         break;
@@ -263,68 +251,26 @@ void parse_args(int argc, char **argv, Parameters &params) {
 }
 
 template <std::size_t RangeSize, std::size_t ReplicationCount>
-struct choose_tests {
-  void operator()(const Parameters &params) {
-    if (params.sketch_impl == sketch_impl_type::cst) {
-      perform_tests<Dense32SparseJLT<RangeSize, ReplicationCount>,
-                    make_ptr_functor>(params);
-    } else if (params.sketch_impl == sketch_impl_type::sparse_cst) {
-    } else if (params.sketch_impl == sketch_impl_type::promotable_cst) {
-    } else if (params.sketch_impl == sketch_impl_type::fwht) {
-      perform_tests<Dense32FWHT<RangeSize, ReplicationCount>, make_ptr_functor>(
-          params);
-    }
-  }
-};
-
-template <std::size_t RangeSize, std::size_t ReplicationCount>
 struct do_all_tests {
-  void operator()(const Parameters &params) {
-    perform_tests<Dense32SparseJLT<RangeSize, ReplicationCount>,
-                  make_ptr_functor>(params);
-    perform_tests<MapSparse32SparseJLT<RangeSize, ReplicationCount>,
-                  make_ptr_functor>(params);
-    perform_tests<MapPromotable32SparseJLT<RangeSize, ReplicationCount>,
-                  make_ptr_functor>(params);
-#if __has_include(<boost/container/flat_map.hpp>)
-    perform_tests<FlatMapSparse32SparseJLT<RangeSize, ReplicationCount>,
-                  make_ptr_functor>(params);
-    perform_tests<FlatMapPromotable32SparseJLT<RangeSize, ReplicationCount>,
-                  make_ptr_functor>(params);
-#endif
-    perform_tests<Dense32FWHT<RangeSize, ReplicationCount>, make_ptr_functor>(
-        params);
-  }
+  void operator()(const Parameters &params) {}
 };
 
 int main(int argc, char **argv) {
-  uint64_t         count(10000);
-  std::uint64_t    range_size(32);
-  std::uint64_t    replication_count(4);
-  std::uint64_t    domain_size(4096);
-  std::uint64_t    observation_count(16);
-  std::uint64_t    seed(krowkee::hash::default_seed);
-  sketch_impl_type sketch_impl(sketch_impl_type::cst);
-  bool             verbose(false);
-  bool             do_all(argc == 1);
+  uint64_t      count(10000);
+  std::uint64_t range_size(32);
+  std::uint64_t replication_count(4);
+  std::uint64_t domain_size(4096);
+  std::uint64_t observation_count(16);
+  std::uint64_t seed(krowkee::hash::default_seed);
+  bool          verbose(false);
 
-  Parameters params{count,
-                    range_size,
-                    replication_count,
-                    domain_size,
-                    observation_count,
-                    seed,
-                    sketch_impl,
+  Parameters params{count,       range_size,        replication_count,
+                    domain_size, observation_count, seed,
                     verbose};
 
   parse_args(argc, argv, params);
 
-  if (do_all == true) {
-    dispatch_with_sketch_sizes<do_all_tests, void>(
-        params.range_size, params.replication_count, params);
-  } else {
-    dispatch_with_sketch_sizes<choose_tests, void>(
-        params.range_size, params.replication_count, params);
-  }
+  dispatch_with_sketch_sizes<do_all_tests, void>(
+      params.range_size, params.replication_count, params);
   return 0;
 }
