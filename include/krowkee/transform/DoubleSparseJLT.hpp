@@ -218,6 +218,18 @@ class DoubleSparseJLT {
     return ss.str();
   }
 
+  constexpr bool same_hashes(const self_type &rhs) {
+    for (int i(0); i < ReplicationCount; ++i) {
+      if (_row_hashes[i] != rhs._row_hashes[i]) {
+        return false;
+      }
+      if (_col_hashes[i] != rhs._col_hashes[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   /**
    * @brief Check for equality between two DoubleSparseJLTs.
    *
@@ -227,15 +239,7 @@ class DoubleSparseJLT {
    * @return false The seeds or range sizes disagree.
    */
   friend constexpr bool operator==(const self_type &lhs, const self_type &rhs) {
-    for (int i(0); i < ReplicationCount; ++i) {
-      if (lhs._row_hashes[i] != rhs._row_hashes[i]) {
-        return false;
-      }
-      if (lhs._col_hashes[i] != rhs._col_hashes[i]) {
-        return false;
-      }
-    }
-    return true;
+    return lhs.same_hashes(rhs);
   }
 
   /**
