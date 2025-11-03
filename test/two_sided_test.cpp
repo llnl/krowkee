@@ -130,6 +130,47 @@ struct init_check {
   }
 };
 
+template <typename SketchType>
+void check_throws_bad_plus_equals(SketchType &lhs, const SketchType &rhs) {
+  lhs += rhs;
+}
+
+template <typename SketchType>
+void check_throws_bad_plus(SketchType &lhs, const SketchType &rhs) {
+  SketchType sketch = lhs += rhs;
+}
+
+/**
+ * Verify that merge (+/+=) operators catch bad merges.
+ */
+template <typename SketchType, template <typename> class MakePtrFunc>
+struct bad_merge_check {
+  using sketch_type        = SketchType;
+  using transform_type     = typename sketch_type::transform_type;
+  using transform_ptr_type = typename sketch_type::transform_ptr_type;
+  using make_ptr_type      = MakePtrFunc<transform_type>;
+
+  constexpr std::string name() const {
+    std::stringstream ss;
+    ss << transform_type::name() << " bad merges";
+    return ss.str();
+  }
+
+  void operator()(const Parameters &params) const {
+    make_ptr_type      _make_ptr = make_ptr_type();
+    transform_ptr_type transform_ptr_1(_make_ptr(32));
+    transform_ptr_type transform_ptr_2(_make_ptr(22));
+    sketch_type        sketch_1(transform_ptr_1);
+    sketch_type        sketch_2(transform_ptr_2);
+    CHECK_THROWS<std::invalid_argument>(
+        check_throws_bad_plus_equals<SketchType>,
+        "bad merge (+=) with different functor seeds", sketch_1, sketch_2);
+    CHECK_THROWS<std::invalid_argument>(
+        check_throws_bad_plus<SketchType>,
+        "bad merge (+) with different functor seeds", sketch_1, sketch_2);
+  }
+};
+
 /**
  * Execute the batter of tests for the given sketch functor.
  */
@@ -150,8 +191,8 @@ void perform_tests(const Parameters &params) {
   std::cout << std::endl << std::endl;
 
   do_test<init_check<sketch_type, MakePtrFunc>>(params);
+  do_test<bad_merge_check<sketch_type, MakePtrFunc>>(params);
   //   do_test<ingest_check<sketch_type, MakePtrFunc>>(params);
-  //   do_test<bad_merge_check<sketch_type, MakePtrFunc>>(params);
   //   do_test<good_merge_check<sketch_type, MakePtrFunc>>(params);
   // #if __has_include(<cereal/cereal.hpp>)
   //   do_test<serialize_check<sketch_type, MakePtrFunc>>(params);

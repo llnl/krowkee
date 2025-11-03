@@ -152,7 +152,7 @@ class Matrix {
    * @throws std::invalid_argument if the register sizes do not match.
    */
   constexpr void merge(const self_type &rhs) {
-    if (row_count() != rhs.row_size() || col_count() != rhs.col_size()) {
+    if (row_count() != rhs.row_count() || col_count() != rhs.col_count()) {
       std::stringstream ss;
       ss << "error: attempting to merge embedding 1 of shape (" << row_count()
          << ", " << col_count() << ") with embedding 2 of shape ("

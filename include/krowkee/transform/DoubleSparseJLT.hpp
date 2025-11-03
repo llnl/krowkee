@@ -21,7 +21,8 @@ using krowkee::stream::Element;
  * a matrix of registers.
  *
  * Implements CountSketch using a `ReplicationCount` number of pairs of hash
- * functions.
+ * functions. Currently assumes that both sides of the matrix are to be
+ * projected to the same dimension.
  *
  * [0] M. Charikar, K. Chen, M. Farach-Colton. Finding frequent items in data
  * streams. Theoretical Computer Science. 2004.
