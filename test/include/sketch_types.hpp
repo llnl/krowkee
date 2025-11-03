@@ -82,3 +82,8 @@ using FlatMapPromotable32SparseJLT = krowkee::sketch::promotable::SparseJLT<
 template <std::size_t RangeSize, std::size_t ReplicationCount>
 using Dense32FWHT =
     krowkee::sketch::FWHT<register_type, RangeSize, ReplicationCount, ptr_type>;
+
+template <std::size_t RangeSize, std::size_t ReplicationCount>
+using TwoSided32JLT =
+    krowkee::sketch::DoubleSparseJLT<register_type, RangeSize, ReplicationCount,
+                                     ptr_type>;

@@ -58,6 +58,25 @@ struct init_check {
   void operator()(const Parameters &params) const {
     make_ptr_type _make_ptr = make_ptr_type();
     {
+      transform_ptr_type transform_ptr(_make_ptr(0));
+      sketch_type        sketch(transform_ptr);
+
+      bool init_empty = sketch.empty();
+
+      CHECK_CONDITION(init_empty == true, "initial empty");
+
+      sketch.insert(1);
+      bool not_empty = sketch.empty();
+      if (not_empty == true) {
+        std::cout << "sketch: \n" << sketch << std::endl;
+      }
+      CHECK_CONDITION(not_empty == false, "post-insert not empty");
+
+      sketch.clear();
+      bool clear_empty = sketch.empty();
+      CHECK_CONDITION(clear_empty == true, "post-clear empty");
+    }
+    {
       transform_ptr_type transform_ptr_1(_make_ptr(0));
       transform_ptr_type transform_ptr_2(_make_ptr(0));
       sketch_type        sketch_1(transform_ptr_1);
@@ -99,22 +118,6 @@ struct init_check {
         std::cout << "sketch2 : " << sketch2 << std::endl;
       }
       CHECK_CONDITION(swap_matches, "copy-and-swap assignment");
-    }
-    {
-      transform_ptr_type transform_ptr(_make_ptr(0));
-      sketch_type        sketch(transform_ptr);
-
-      bool init_empty = sketch.empty();
-
-      CHECK_CONDITION(init_empty == true, "initial empty");
-
-      sketch.insert(1);
-      bool not_empty = sketch.empty();
-      CHECK_CONDITION(not_empty == false, "post-insert not empty");
-
-      sketch.clear();
-      bool clear_empty = sketch.empty();
-      CHECK_CONDITION(clear_empty == true, "post-clear empty");
     }
   }
 };
@@ -242,7 +245,10 @@ void parse_args(int argc, char **argv, Parameters &params) {
 
 template <std::size_t RangeSize, std::size_t ReplicationCount>
 struct do_all_tests {
-  void operator()(const Parameters &params) {}
+  void operator()(const Parameters &params) {
+    perform_tests<TwoSided32JLT<RangeSize, ReplicationCount>, make_ptr_functor>(
+        params);
+  }
 };
 
 int main(int argc, char **argv) {
