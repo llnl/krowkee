@@ -34,7 +34,7 @@ template <typename RegType, template <typename> class MergeOp>
 class Matrix {
  public:
   using register_type  = RegType;
-  using registers_type = std::vector<std::vector<register_type>>;
+  using registers_type = std::vector<register_type>;
   using merge_type     = MergeOp<register_type>;
   using self_type      = Matrix<register_type, MergeOp>;
 
@@ -87,6 +87,8 @@ class Matrix {
    */
   friend void swap(self_type &lhs, self_type &rhs) {
     std::swap(lhs._registers, rhs._registers);
+    std::swap(lhs._row_count, rhs._row_count);
+    std::swap(lhs._col_count, rhs._col_count);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -103,6 +105,8 @@ class Matrix {
   template <class Archive>
   void serialize(Archive &archive) {
     archive(_registers);
+    archive(_row_count);
+    archive(_col_count)
   }
 #endif
 
@@ -150,10 +154,11 @@ class Matrix {
    * @throws std::invalid_argument if the register sizes do not match.
    */
   constexpr void merge(const self_type &rhs) {
-    if (size() != rhs.size()) {
+    if (row_count() != rhs.row_size() || col_count() != rhs.col_size()) {
       std::stringstream ss;
-      ss << "error: attempting to merge embedding 1 of dimension " << size()
-         << " with embedding 2 of dimension " << rhs.size();
+      ss << "error: attempting to merge embedding 1 of shape (" << row_count()
+         << ", " << col_count() << ") with embedding 2 of shape ("
+         << rhs.row_count() << ", " << rhs.col_count() << ")";
       throw std::invalid_argument(ss.str());
     }
     std::transform(std::begin(_registers), std::end(_registers),
@@ -165,9 +170,9 @@ class Matrix {
    * @brief Operator overload for convenience for embeddings without additional
    * consistency checks.
    *
-   * @param rhs the other Dense. Care must be taken to ensure that
+   * @param rhs the other Matrix. Care must be taken to ensure that
    *     one does not merge subspace embeddings of different types.
-   * @return self_type& `this` Dense, having been merged with `rhs`.
+   * @return self_type& `this` Matrix, having been merged with `rhs`.
    */
   self_type &operator+=(const self_type &rhs) {
     merge(rhs);
@@ -230,7 +235,7 @@ class Matrix {
    * @return constexpr const register_type& A const reference to the object at
    * the indicated register.
    */
-  constexpr const register_type &operator[](
+  constexpr const register_type &operator()(
       const std::uint64_t row_index, const std::uint64_t col_index) const {
     return _registers.get(get_index(row_index, col_index));
   }
@@ -242,7 +247,7 @@ class Matrix {
    * `size`.
    * @return register_type& A reference to the object at the indicated register.
    */
-  register_type &operator[](const std::uint64_t row_index,
+  register_type &operator()(const std::uint64_t row_index,
                             const std::uint64_t col_index) {
     return _registers.at(get_index(row_index, col_index));
   }
@@ -270,6 +275,12 @@ class Matrix {
 
   /** The size of the registers vector. */
   constexpr std::size_t size() const { return _registers.size(); }
+
+  /** The number of rows in the registers matrix. */
+  constexpr std::size_t row_count() const { return _row_count; }
+
+  /** The number of columns in the registers matrix. */
+  constexpr std::size_t col_count() const { return _col_count; }
 
   /** The size of the registers vector. */
   constexpr std::size_t max_size() const { return _registers.size(); }
@@ -316,7 +327,8 @@ class Matrix {
    * @return false At least one register disagrees.
    */
   friend constexpr bool operator==(const self_type &lhs, const self_type &rhs) {
-    return lhs.same_registers(rhs);
+    return lhs.same_registers(rhs) && lhs.row_count() == rhs.row_count() &&
+           lhs.col_count() == rhs.col_count();
   }
 
   /**
@@ -364,12 +376,18 @@ class Matrix {
    * @return std::ostream& The new stream state.
    */
   friend std::ostream &operator<<(std::ostream &os, const self_type &sk) {
-    int idx = 0;
+    int row_idx = 0;
+    int col_idx = 0;
     for_each(sk, [&](const auto &p) {
-      if (idx != 0) {
+      if (col_idx == sk.col_count()) {
+        col_idx = 0;
+        ++row_idx;
+      }
+      if (col_idx != 0) {
         os << " ";
       }
-      os << "(" << idx++ << "," << std::int64_t(p) << ")";
+      os << "(" << col_idx++ << "," << col_idx++ << "," << std::int64_t(p)
+         << ")";
     });
     return os;
   }
