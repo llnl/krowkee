@@ -104,7 +104,7 @@ class Matrix {
   void serialize(Archive &archive) {
     archive(_registers);
     archive(_row_count);
-    archive(_col_count)
+    archive(_col_count);
   }
 #endif
 
@@ -218,8 +218,8 @@ class Matrix {
     return std::cend(_registers);
   }
 
-  static constexpr std::uint64_t get_index(
-      const std::uint64_t row_index, const std::uint64_t col_index) const {
+  constexpr std::uint64_t get_index(const std::uint64_t row_index,
+                                    const std::uint64_t col_index) const {
     return row_index * _row_count + col_index;
   }
 

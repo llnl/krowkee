@@ -195,7 +195,7 @@ class DoubleSparseJLT {
   }
 
   /** Get the random seed. */
-  constexpr std::uint64_t seed() const { return _hashes[0].seed(); }
+  constexpr std::uint64_t seed() const { return _row_hashes[0].seed(); }
 
   /**
    * @brief Return a description of the transform type.

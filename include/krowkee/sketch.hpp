@@ -8,10 +8,12 @@
 #include <krowkee/hash/countsketch.hpp>
 #include <krowkee/hash/hash.hpp>
 
+#include <krowkee/transform/DoubleSparseJLT.hpp>
 #include <krowkee/transform/FWHT.hpp>
 #include <krowkee/transform/SparseJLT.hpp>
 
 #include <krowkee/sketch/Dense.hpp>
+#include <krowkee/sketch/Matrix.hpp>
 #include <krowkee/sketch/Promotable.hpp>
 #include <krowkee/sketch/Sparse.hpp>
 
@@ -37,6 +39,13 @@ using SparseJLT = krowkee::sketch::Sketch<
     krowkee::transform::SparseJLT<RegType, krowkee::hash::CountSketchHash,
                                   RangeSize, ReplicationCount>,
     krowkee::sketch::Dense<RegType, std::plus>, PtrType>;
+
+template <typename RegType, std::size_t RangeSize, std::size_t ReplicationCount,
+          template <typename> class PtrType = std::shared_ptr>
+using DoubleSparseJLT = krowkee::sketch::Sketch<
+    krowkee::transform::DoubleSparseJLT<RegType, krowkee::hash::CountSketchHash,
+                                        RangeSize, ReplicationCount>,
+    krowkee::sketch::Matrix<RegType, std::plus>, PtrType>;
 
 template <typename RegType, std::size_t RangeSize, std::size_t ReplicationCount,
           template <typename> class PtrType = std::shared_ptr>

@@ -63,8 +63,6 @@ class SparseJLT {
    * Each insert is hashed to one register location per ReplicationCount
    * register replica.
    *
-   * @note This behavior may change in the future.
-   *
    * @tparam Args type(s) of additional hash parameters
    * @param seed The random seed.
    * @param args Any additional parameters required by the hash functions.
