@@ -30,17 +30,16 @@ namespace sketch {
  * @tparam RegType The type held by each register.
  * @tparam MergeOp An template merge operator to combine two sketches.
  */
-template <typename RegType, template <typename> class MergeOp>
+template <typename RegType, template <typename> class MergeOp,
+          std::size_t RowCount, std::size_t ColCount>
 class Matrix {
  public:
   using register_type  = RegType;
   using registers_type = std::vector<register_type>;
   using merge_type     = MergeOp<register_type>;
-  using self_type      = Matrix<register_type, MergeOp>;
+  using self_type      = Matrix<register_type, MergeOp, RowCount, ColCount>;
 
  protected:
-  std::size_t    _row_count;
-  std::size_t    _col_count;
   registers_type _registers;
 
  public:
@@ -54,11 +53,7 @@ class Matrix {
    * @param args Ignored by Matrix.
    */
   template <typename... Args>
-  Matrix(const std::size_t size, const Args &...args)
-      : _row_count(size), _col_count(size), _registers(size * size) {
-    std::cout << "created matrix of shape (" << _row_count << ", " << _col_count
-              << ")" << std::endl;
-  }
+  Matrix(const Args &...args) : _registers(RowCount * ColCount) {}
 
   /**
    * @brief Copy constructor.
@@ -87,8 +82,6 @@ class Matrix {
    * @param rhs The right-hand container.
    */
   friend void swap(self_type &lhs, self_type &rhs) {
-    std::swap(lhs._row_count, rhs._row_count);
-    std::swap(lhs._col_count, rhs._col_count);
     std::swap(lhs._registers, rhs._registers);
   }
 
@@ -106,8 +99,6 @@ class Matrix {
   template <class Archive>
   void serialize(Archive &archive) {
     archive(_registers);
-    archive(_row_count);
-    archive(_col_count);
   }
 #endif
 
@@ -155,9 +146,6 @@ class Matrix {
    * @throws std::invalid_argument if the register sizes do not match.
    */
   constexpr void merge(const self_type &rhs) {
-    std::cout << "attempting to merge matrix of size (" << row_count() << ", "
-              << col_count() << ") with a matrix of shape (" << rhs.row_count()
-              << ", " << rhs.col_count() << ")" << std::endl;
     if (row_count() != rhs.row_count() || col_count() != rhs.col_count()) {
       std::stringstream ss;
       ss << "error: attempting to merge lhs embedding of shape (" << row_count()
@@ -228,7 +216,7 @@ class Matrix {
       const std::pair<std::uint64_t, std::uint64_t> &indices) const {
     const std::uint64_t &row_index = indices.first;
     const std::uint64_t &col_index = indices.second;
-    return row_index * _row_count + col_index;
+    return row_index * row_count() + col_index;
   }
 
   /**
@@ -280,10 +268,10 @@ class Matrix {
   constexpr std::size_t size() const { return _registers.size(); }
 
   /** The number of rows in the registers matrix. */
-  constexpr std::size_t row_count() const { return _row_count; }
+  static constexpr std::size_t row_count() { return RowCount; }
 
   /** The number of columns in the registers matrix. */
-  constexpr std::size_t col_count() const { return _col_count; }
+  static constexpr std::size_t col_count() { return ColCount; }
 
   /** The size of the registers vector. */
   constexpr std::size_t max_size() const { return _registers.size(); }

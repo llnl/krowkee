@@ -45,7 +45,9 @@ template <typename RegType, std::size_t RangeSize, std::size_t ReplicationCount,
 using DoubleSparseJLT = krowkee::sketch::Sketch<
     krowkee::transform::DoubleSparseJLT<RegType, krowkee::hash::CountSketchHash,
                                         RangeSize, ReplicationCount>,
-    krowkee::sketch::Matrix<RegType, std::plus>, PtrType>;
+    krowkee::sketch::Matrix<RegType, std::plus, RangeSize * ReplicationCount,
+                            RangeSize * ReplicationCount>,
+    PtrType>;
 
 template <typename RegType, std::size_t RangeSize, std::size_t ReplicationCount,
           template <typename> class PtrType = std::shared_ptr>

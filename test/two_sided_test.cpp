@@ -220,13 +220,7 @@ struct good_merge_check {
     last.compactify();
     both.compactify();
     all.compactify();
-    std::cout << "first shape = (" << first.container().row_count() << ", "
-              << first.container().col_count() << ")" << "\n"
-              << std::endl;
-    std::cout << first << "\n" << std::endl;
-    std::cout << middle << "\n" << std::endl;
     sketch_type bb = (first + middle);
-    std::cout << "gets here?" << std::endl;
     bb.compactify();
     {
       bool merge_success = both == bb;
