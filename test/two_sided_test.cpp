@@ -172,6 +172,81 @@ struct bad_merge_check {
 };
 
 /**
+ * Verify that merge (+/+=) operators work as expected.
+ */
+template <typename SketchType, template <typename> class MakePtrFunc>
+struct good_merge_check {
+  using sketch_type        = SketchType;
+  using transform_type     = typename sketch_type::transform_type;
+  using transform_ptr_type = typename sketch_type::transform_ptr_type;
+  using make_ptr_type      = MakePtrFunc<transform_type>;
+
+  constexpr std::string name() const {
+    std::stringstream ss;
+    ss << transform_type::name() << " good merges";
+    return ss.str();
+  }
+
+  void operator()(const Parameters &params) const {
+    make_ptr_type      _make_ptr = make_ptr_type();
+    transform_ptr_type transform_ptr(_make_ptr(8));
+    sketch_type        first(transform_ptr);
+    sketch_type        middle(transform_ptr);
+    sketch_type        last(transform_ptr);
+    sketch_type        both(transform_ptr);
+    sketch_type        all(transform_ptr);
+    for (std::uint64_t i(0); i < 1000; ++i) {
+      for (std::uint64_t j(0); j < 1000; ++j) {
+        first.insert({i, j});
+        both.insert({i, j});
+        all.insert({i, j});
+      }
+    }
+    for (std::uint64_t i(1000); i < 2000; ++i) {
+      for (std::uint64_t j(1000); j < 2000; ++j) {
+        middle.insert({i, j});
+        both.insert({i, j});
+        all.insert({i, j});
+      }
+    }
+    for (std::uint64_t i(1000); i < 2000; ++i) {
+      for (std::uint64_t j(1000); j < 2000; ++j) {
+        last.insert({i, j});
+        all.insert({i, j});
+      }
+    }
+    first.compactify();
+    middle.compactify();
+    last.compactify();
+    both.compactify();
+    all.compactify();
+    std::cout << "first shape = (" << first.container().row_count() << ", "
+              << first.container().col_count() << ")" << "\n"
+              << std::endl;
+    std::cout << first << "\n" << std::endl;
+    std::cout << middle << "\n" << std::endl;
+    sketch_type bb = (first + middle);
+    std::cout << "gets here?" << std::endl;
+    bb.compactify();
+    {
+      bool merge_success = both == bb;
+      CHECK_CONDITION(merge_success == true, "merge (+)");
+    }
+    {
+      sketch_type aa = first + middle + last;
+      aa.compactify();
+      bool multimerge_success = all == aa;
+      CHECK_CONDITION(multimerge_success == true, "multi-merge (+, +)");
+    }
+    {
+      first += middle;
+      bool inplace_merge_success = both == first;
+      CHECK_CONDITION(inplace_merge_success == true, "merge (+=)");
+    }
+  }
+};
+
+/**
  * Execute the batter of tests for the given sketch functor.
  */
 template <typename SketchType, template <typename> class MakePtrFunc>
@@ -192,8 +267,8 @@ void perform_tests(const Parameters &params) {
 
   do_test<init_check<sketch_type, MakePtrFunc>>(params);
   do_test<bad_merge_check<sketch_type, MakePtrFunc>>(params);
+  do_test<good_merge_check<sketch_type, MakePtrFunc>>(params);
   //   do_test<ingest_check<sketch_type, MakePtrFunc>>(params);
-  //   do_test<good_merge_check<sketch_type, MakePtrFunc>>(params);
   // #if __has_include(<cereal/cereal.hpp>)
   //   do_test<serialize_check<sketch_type, MakePtrFunc>>(params);
   // #endif

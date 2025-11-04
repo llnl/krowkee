@@ -55,7 +55,10 @@ class Matrix {
    */
   template <typename... Args>
   Matrix(const std::size_t size, const Args &...args)
-      : _row_count(size), _col_count(size), _registers(size * size) {}
+      : _row_count(size), _col_count(size), _registers(size * size) {
+    std::cout << "created matrix of shape (" << _row_count << ", " << _col_count
+              << ")" << std::endl;
+  }
 
   /**
    * @brief Copy constructor.
@@ -84,9 +87,9 @@ class Matrix {
    * @param rhs The right-hand container.
    */
   friend void swap(self_type &lhs, self_type &rhs) {
-    std::swap(lhs._registers, rhs._registers);
     std::swap(lhs._row_count, rhs._row_count);
     std::swap(lhs._col_count, rhs._col_count);
+    std::swap(lhs._registers, rhs._registers);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -152,10 +155,13 @@ class Matrix {
    * @throws std::invalid_argument if the register sizes do not match.
    */
   constexpr void merge(const self_type &rhs) {
+    std::cout << "attempting to merge matrix of size (" << row_count() << ", "
+              << col_count() << ") with a matrix of shape (" << rhs.row_count()
+              << ", " << rhs.col_count() << ")" << std::endl;
     if (row_count() != rhs.row_count() || col_count() != rhs.col_count()) {
       std::stringstream ss;
-      ss << "error: attempting to merge embedding 1 of shape (" << row_count()
-         << ", " << col_count() << ") with embedding 2 of shape ("
+      ss << "error: attempting to merge lhs embedding of shape (" << row_count()
+         << ", " << col_count() << ") with rhs embedding of shape ("
          << rhs.row_count() << ", " << rhs.col_count() << ")";
       throw std::invalid_argument(ss.str());
     }
@@ -324,8 +330,8 @@ class Matrix {
    * @return false At least one register disagrees.
    */
   friend constexpr bool operator==(const self_type &lhs, const self_type &rhs) {
-    return lhs.same_registers(rhs) && lhs.row_count() == rhs.row_count() &&
-           lhs.col_count() == rhs.col_count();
+    return lhs.row_count() == rhs.row_count() &&
+           lhs.col_count() == rhs.col_count() && lhs.same_registers(rhs);
   }
 
   /**

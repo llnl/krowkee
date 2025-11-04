@@ -396,7 +396,7 @@ class Sketch {
    */
   friend void swap(self_type &lhs, self_type &rhs) {
     std::swap(lhs._transform_ptr, rhs._transform_ptr);
-    swap(lhs._container, rhs._container);
+    std::swap(lhs._container, rhs._container);
   }
 
   //////////////////////////////////////////////////////////////////////////////
