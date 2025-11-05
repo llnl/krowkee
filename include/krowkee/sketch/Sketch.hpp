@@ -67,7 +67,7 @@ class Sketch {
   Sketch(const transform_ptr_type &sf_ptr,
          const std::size_t         compaction_threshold = 100,
          const std::size_t         promotion_threshold  = 4096)
-      : _container(sf_ptr->size(), compaction_threshold, promotion_threshold),
+      : _container(compaction_threshold, promotion_threshold),
         _transform_ptr(sf_ptr) {}
 
   /**

@@ -59,7 +59,8 @@ using transform_type =
 // `range_size * replication_count`. In addition to the register type, it
 // requires a merge operator that governs how two sketches of the same type are
 // merged.
-using dense_type = krowkee::sketch::Dense<register_type, std::plus>;
+using dense_type = krowkee::sketch::Dense<register_type, std::plus,
+                                          range_size * replication_count>;
 
 // Finally, the `krowkee::sketch::Sketch` class requires a shared pointer type
 // that determines how the transform pointer sharing is implemented. In shared
@@ -69,7 +70,9 @@ using dense_type = krowkee::sketch::Dense<register_type, std::plus>;
 using verbose_sketch_type = krowkee::sketch::Sketch<
     krowkee::transform::SparseJLT<register_type, krowkee::hash::CountSketchHash,
                                   range_size, replication_count>,
-    krowkee::sketch::Dense<register_type, std::plus>, std::shared_ptr>;
+    krowkee::sketch::Dense<register_type, std::plus,
+                           range_size * replication_count>,
+    std::shared_ptr>;
 
 // If this exe compiles, then the two types are identical.
 static_assert(std::is_same<simple_sketch_type, verbose_sketch_type>::value);

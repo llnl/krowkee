@@ -38,7 +38,8 @@ template <typename RegType, std::size_t RangeSize, std::size_t ReplicationCount,
 using SparseJLT = krowkee::sketch::Sketch<
     krowkee::transform::SparseJLT<RegType, krowkee::hash::CountSketchHash,
                                   RangeSize, ReplicationCount>,
-    krowkee::sketch::Dense<RegType, std::plus>, PtrType>;
+    krowkee::sketch::Dense<RegType, std::plus, RangeSize * ReplicationCount>,
+    PtrType>;
 
 template <typename RegType, std::size_t RangeSize, std::size_t ReplicationCount,
           template <typename> class PtrType = std::shared_ptr>
@@ -53,7 +54,8 @@ template <typename RegType, std::size_t RangeSize, std::size_t ReplicationCount,
           template <typename> class PtrType = std::shared_ptr>
 using FWHT = krowkee::sketch::Sketch<
     krowkee::transform::FWHT<RegType, RangeSize, ReplicationCount>,
-    krowkee::sketch::Dense<RegType, std::plus>, PtrType>;
+    krowkee::sketch::Dense<RegType, std::plus, RangeSize * ReplicationCount>,
+    PtrType>;
 
 namespace sparse {
 template <typename RegType, std::size_t RangeSize, std::size_t ReplicationCount,
@@ -62,7 +64,8 @@ template <typename RegType, std::size_t RangeSize, std::size_t ReplicationCount,
 using SparseJLT = krowkee::sketch::Sketch<
     krowkee::transform::SparseJLT<RegType, krowkee::hash::CountSketchHash,
                                   RangeSize, ReplicationCount>,
-    krowkee::sketch::Sparse<RegType, std::plus, MapType, std::uint32_t>,
+    krowkee::sketch::Sparse<RegType, std::plus, MapType, std::uint32_t,
+                            RangeSize * ReplicationCount>,
     PtrType>;
 
 }  // namespace sparse
@@ -74,7 +77,8 @@ template <typename RegType, std::size_t RangeSize, std::size_t ReplicationCount,
 using SparseJLT = krowkee::sketch::Sketch<
     krowkee::transform::SparseJLT<RegType, krowkee::hash::CountSketchHash,
                                   RangeSize, ReplicationCount>,
-    krowkee::sketch::Promotable<RegType, std::plus, MapType, std::uint32_t>,
+    krowkee::sketch::Promotable<RegType, std::plus, MapType, std::uint32_t,
+                                RangeSize * ReplicationCount>,
     PtrType>;
 
 }  // namespace promotable

@@ -30,13 +30,13 @@ namespace sketch {
  * @tparam RegType The type held by each register.
  * @tparam MergeOp An template merge operator to combine two sketches.
  */
-template <typename RegType, template <typename> class MergeOp>
+template <typename RegType, template <typename> class MergeOp, std::size_t Size>
 class Dense {
  public:
   using register_type  = RegType;
   using registers_type = std::vector<register_type>;
   using merge_type     = MergeOp<register_type>;
-  using self_type      = Dense<register_type, MergeOp>;
+  using self_type      = Dense<register_type, MergeOp, Size>;
 
  protected:
   registers_type _registers;
@@ -51,7 +51,7 @@ class Dense {
    * @param args Ignored by Dense.
    */
   template <typename... Args>
-  Dense(const std::size_t size, const Args &...args) : _registers(size) {}
+  Dense(const Args &...args) : _registers(Size) {}
 
   /**
    * @brief Copy constructor.
@@ -254,13 +254,13 @@ class Dense {
   constexpr bool is_sparse() const { return false; }
 
   /** The size of the registers vector. */
-  constexpr std::size_t size() const { return _registers.size(); }
+  static constexpr std::size_t size() { return Size; }
 
   /** The size of the registers vector. */
-  constexpr std::size_t max_size() const { return _registers.size(); }
+  static constexpr std::size_t max_size() { return Size; }
 
   /** The number of bytes used by each register. */
-  constexpr std::size_t reg_size() const { return sizeof(register_type); }
+  static constexpr std::size_t reg_size() { return sizeof(register_type); }
 
   constexpr std::size_t compaction_threshold() const { return 0; }
 
