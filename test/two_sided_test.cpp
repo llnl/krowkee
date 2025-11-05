@@ -240,6 +240,37 @@ struct good_merge_check {
   }
 };
 
+#if __has_include(<cereal/cereal.hpp>)
+template <typename SketchType, template <typename> class MakePtrFunc>
+struct serialize_check {
+  using sketch_type        = SketchType;
+  using transform_type     = typename sketch_type::transform_type;
+  using transform_ptr_type = typename sketch_type::transform_ptr_type;
+  using make_ptr_type      = MakePtrFunc<transform_type>;
+
+  constexpr std::string name() const {
+    std::stringstream ss;
+    ss << transform_type::name() << " serialize";
+    return ss.str();
+  }
+
+  void operator()(const Parameters &params) const {
+    make_ptr_type      _make_ptr{};
+    transform_ptr_type transform_ptr(_make_ptr(params.seed));
+
+    CHECK_ALL_ARCHIVES(*transform_ptr, "sketch functor");
+
+    sketch_type sketch(transform_ptr);
+    for (std::uint64_t i(0); i < params.count; sketch.insert(i++)) {
+    }
+    sketch.compactify();
+
+    CHECK_ALL_ARCHIVES(sketch.container(), "sketch container");
+    CHECK_ALL_ARCHIVES(sketch, "whole sketch object");
+  }
+};
+#endif
+
 /**
  * Execute the batter of tests for the given sketch functor.
  */
@@ -262,10 +293,10 @@ void perform_tests(const Parameters &params) {
   do_test<init_check<sketch_type, MakePtrFunc>>(params);
   do_test<bad_merge_check<sketch_type, MakePtrFunc>>(params);
   do_test<good_merge_check<sketch_type, MakePtrFunc>>(params);
-  //   do_test<ingest_check<sketch_type, MakePtrFunc>>(params);
-  // #if __has_include(<cereal/cereal.hpp>)
-  //   do_test<serialize_check<sketch_type, MakePtrFunc>>(params);
-  // #endif
+//   do_test<ingest_check<sketch_type, MakePtrFunc>>(params);
+#if __has_include(<cereal/cereal.hpp>)
+  do_test<serialize_check<sketch_type, MakePtrFunc>>(params);
+#endif
 }
 
 void print_help(char *exe_name) {
