@@ -190,10 +190,9 @@ struct ingest_check {
 
   void rel_mag_test(const transform_ptr_type &transform_ptr,
                     const Parameters         &params) const {
-    sketch_type   sketch(transform_ptr, params.compaction_threshold,
-                         params.promotion_threshold);
-    std::uint64_t row_idx(17);
-    for (std::uint64_t i(0); i < params.count; sketch.insert(i++, row_idx)) {
+    sketch_type sketch(transform_ptr, params.compaction_threshold,
+                       params.promotion_threshold);
+    for (std::uint64_t i(0); i < params.count; sketch.insert(i++)) {
     }
     sketch.compactify();
     int    sum(accumulate(sketch, 0.0));
