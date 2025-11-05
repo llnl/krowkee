@@ -271,6 +271,216 @@ struct serialize_check {
 };
 #endif
 
+template <typename SketchType, template <typename> class MakePtrFunc>
+struct ingest_check {
+  using sketch_type        = SketchType;
+  using transform_type     = typename sketch_type::transform_type;
+  using transform_ptr_type = typename sketch_type::transform_ptr_type;
+  using make_ptr_type      = MakePtrFunc<transform_type>;
+
+  constexpr std::string name() const {
+    std::stringstream ss;
+    ss << transform_type::name() << " ingest";
+    return ss.str();
+  }
+
+  // std::vector<std::vector<std::uint64_t>> get_uniform_inserts(
+  //     const Parameters &params) const {
+  //   std::mt19937                                 gen(params.seed);
+  //   std::uniform_int_distribution<std::uint64_t> dist(0,
+  //                                                     params.domain_size -
+  //                                                     1);
+
+  //   std::vector<std::vector<std::uint64_t>> inserts(
+  //       params.observation_count, std::vector<std::uint64_t>(params.count));
+
+  //   for (std::int64_t i(0); i < params.observation_count; ++i) {
+  //     for (std::int64_t j(0); j < params.count; ++j) {
+  //       inserts[i][j] = dist(gen);
+  //     }
+  //   }
+  //   return inserts;
+  // }
+
+  // template <typename T>
+  // double _l2_distance_sq(const std::vector<T> &lhs,
+  //                        const std::vector<T> &rhs) const {
+  //   assert(lhs.size() == rhs.size());
+  //   double dist_sq(0);
+  //   for (int i(0); i < lhs.size(); ++i) {
+  //     dist_sq += std::pow(lhs[i] - rhs[i], 2);
+  //   }
+  //   return dist_sq;
+  // }
+
+  void rel_mag_test(const transform_ptr_type &transform_ptr,
+                    const Parameters         &params) const {
+    sketch_type sketch(transform_ptr);
+    for (std::uint64_t i(0); i < 1000; ++i) {
+      for (std::uint64_t j(0); j < 1000; ++j) {
+        sketch.insert({i, j});
+      }
+    }
+    sketch.compactify();
+    int    sum(accumulate(sketch, 0.0));
+    double rel_mag((double)sum /
+                   (1000000 * params.range_size * params.replication_count));
+    if (params.verbose == true) {
+      std::cout << "\t" << sketch << std::endl;
+      std::cout << "\tregister sum (should be near zero): " << sum
+                << ", relative magnitude: " << rel_mag << std::endl;
+    }
+    CHECK_CONDITION(rel_mag < 0.1, "register sum relative magnitude near zero");
+  }
+
+  // template <typename T>
+  // void print_mat(const char *name, std::vector<std::vector<T>> &inserts,
+  //                const int nrows, const int ncosketch) const {
+  //   std::cout << std::endl;
+  //   std::cout << name << ":" << std::endl;
+  //   for (int i(0); i < nrows; ++i) {
+  //     std::cout << "(" << i << ")\t";
+  //     for (int j(0); j < ncosketch; ++j) {
+  //       std::cout << " " << inserts[i][j];
+  //     }
+  //     std::cout << std::endl;
+  //   }
+  // }
+
+  // void print_mat(std::vector<sketch_type> &sketches, const int nrows) const {
+  //   std::cout << std::endl;
+  //   std::cout << "sketches:" << std::endl;
+  //   for (int i(0); i < nrows; ++i) {
+  //     std::cout << "(" << i << ")\t" << sketches[i] << std::endl;
+  //   }
+  // }
+
+  // std::vector<std::vector<register_type>> fill_observation_vector(
+  //     const std::vector<std::vector<std::uint64_t>> &inserts,
+  //     const Parameters                              &params) const {
+  //   std::vector<std::vector<register_type>> observations(
+  //       params.observation_count,
+  //       std::vector<register_type>(params.domain_size));
+  //   for (int i(0); i < params.observation_count; ++i) {
+  //     for (int j(0); j < params.count; ++j) {
+  //       observations[i][inserts[i][j]]++;
+  //     }
+  //   }
+  //   return observations;
+  // }
+
+  // std::vector<sketch_type> fill_sketch_vector(
+  //     const transform_ptr_type                      &transform_ptr,
+  //     const std::vector<std::vector<std::uint64_t>> &inserts,
+  //     const Parameters                              &params) const {
+  //   std::vector<sketch_type> sketches(
+  //       params.observation_count,
+  //       sketch_type(transform_ptr, params.compaction_threshold,
+  //                   params.promotion_threshold));
+  //   for (int i(0); i < params.observation_count; ++i) {
+  //     for (int j(0); j < params.count; ++j) {
+  //       sketches[i].insert(inserts[i][j]);
+  //     }
+  //     sketches[i].compactify();
+  //   }
+  //   return sketches;
+  // }
+
+  // std::vector<std::vector<register_type>> fill_projection_vector(
+  //     const std::vector<sketch_type> &sketches,
+  //     const Parameters               &params) const {
+  //   std::vector<std::vector<register_type>> projections;
+  //   for (int i(0); i < params.observation_count; ++i) {
+  //     projections.push_back(sketches[i].scaled_registers());
+  //   }
+  //   return projections;
+  // }
+
+  // void lemma_check(const transform_ptr_type &transform_ptr,
+  //                  const Parameters         &params) const {
+  //   sketch_type sketch(transform_ptr, params.compaction_threshold,
+  //                      params.promotion_threshold);
+
+  //   std::vector<std::vector<std::uint64_t>> inserts =
+  //       get_uniform_inserts(params);
+
+  //   std::vector<std::vector<register_type>> observations =
+  //       fill_observation_vector(inserts, params);
+
+  //   std::vector<sketch_type> sketches =
+  //       fill_sketch_vector(transform_ptr, inserts, params);
+
+  //   std::vector<std::vector<register_type>> projections =
+  //       fill_projection_vector(sketches, params);
+
+  //   double expected_epsilon =
+  //       std::sqrt(16 * std::log(params.observation_count) /
+  //                 (params.range_size * params.range_size));
+  //   // compute distances
+  //   if (params.verbose) {
+  //     print_mat("inserts", inserts, params.observation_count, params.count);
+  //     print_mat("observations", observations, params.observation_count,
+  //               params.domain_size);
+  //     print_mat(sketches, params.observation_count);
+  //     print_mat("projections", projections, params.observation_count,
+  //               params.range_size * params.replication_count);
+  //     std::cout << std::endl;
+  //     std::cout << "projected vectors:" << std::endl;
+  //   }
+  //   double success_rate(0.0);
+  //   double empirical_epsilon;
+  //   int    trials(0);
+  //   for (int i(0); i < params.observation_count; ++i) {
+  //     for (int j(0); j < params.observation_count; ++j) {
+  //       if (i == j) {
+  //         break;
+  //       }
+  //       ++trials;
+  //       double ob_dist    = _l2_distance_sq(observations[i],
+  //       observations[j]); double sk_dist    = _l2_distance_sq(projections[i],
+  //       projections[j]); double this_error = mul_error(ob_dist, sk_dist);
+  //       empirical_epsilon += this_error;
+  //       if (in_bounds(ob_dist, sk_dist, expected_epsilon)) {
+  //         success_rate += 1.0;
+  //       }
+  //       if (params.verbose) {
+  //         std::cout << "\t(" << i << "," << j << ") ob " << ob_dist << ", sk
+  //         "
+  //                   << sk_dist << " (multiplicative error: 1 +/- " <<
+  //                   this_error
+  //                   << ") (in bounds: "
+  //                   << in_bounds(ob_dist, sk_dist, expected_epsilon) << ")"
+  //                   << std::endl;
+  //       }
+  //     }
+  //   }
+  //   success_rate /= trials;
+  //   empirical_epsilon /= trials;
+  //   bool lemma_guarantee_success = success_rate > 0.5;
+  //   CHECK_CONDITION(lemma_guarantee_success == true, "lemma guarantee (",
+  //                   trials, " trials, ", success_rate,
+  //                   " success rate, expected epsilon=", expected_epsilon,
+  //                   ", mean empirical epsilon=", empirical_epsilon, ")");
+  // }
+
+  void operator()(const Parameters &params) const {
+    make_ptr_type      _make_ptr{};
+    transform_ptr_type transform_ptr(_make_ptr(params.seed));
+    rel_mag_test(transform_ptr, params);
+    // lemma_check(transform_ptr, params);
+  }
+
+  // bool in_bounds(const double ob_dist, const double sk_dist,
+  //                const double epsilon) const {
+  //   return (sk_dist < (1 + epsilon) * ob_dist) &&
+  //          (sk_dist > (1 - epsilon) * ob_dist);
+  // }
+
+  // double mul_error(const double ob_dist, const double sk_dist) const {
+  //   return std::abs(1 - sk_dist / ob_dist);
+  // }
+};
+
 /**
  * Execute the batter of tests for the given sketch functor.
  */
@@ -293,7 +503,7 @@ void perform_tests(const Parameters &params) {
   do_test<init_check<sketch_type, MakePtrFunc>>(params);
   do_test<bad_merge_check<sketch_type, MakePtrFunc>>(params);
   do_test<good_merge_check<sketch_type, MakePtrFunc>>(params);
-//   do_test<ingest_check<sketch_type, MakePtrFunc>>(params);
+  do_test<ingest_check<sketch_type, MakePtrFunc>>(params);
 #if __has_include(<cereal/cereal.hpp>)
   do_test<serialize_check<sketch_type, MakePtrFunc>>(params);
 #endif
