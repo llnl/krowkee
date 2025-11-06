@@ -58,7 +58,7 @@ struct init_check {
   void operator()(const Parameters &params) const {
     make_ptr_type _make_ptr = make_ptr_type();
     {
-      transform_ptr_type transform_ptr(_make_ptr(0));
+      transform_ptr_type transform_ptr(_make_ptr(0, 1));
       sketch_type        sketch(transform_ptr);
 
       bool init_empty = sketch.empty();
@@ -77,8 +77,8 @@ struct init_check {
       CHECK_CONDITION(clear_empty == true, "post-clear empty");
     }
     {
-      transform_ptr_type transform_ptr_1(_make_ptr(0));
-      transform_ptr_type transform_ptr_2(_make_ptr(0));
+      transform_ptr_type transform_ptr_1(_make_ptr(0, 1));
+      transform_ptr_type transform_ptr_2(_make_ptr(0, 1));
       sketch_type        sketch_1(transform_ptr_1);
       sketch_type        sketch_2(transform_ptr_2);
       for (int i(0); i < 1000; i++) {
@@ -96,7 +96,7 @@ struct init_check {
                       "constructor/insert consistency");
     }
     {
-      transform_ptr_type transform_ptr(_make_ptr(0));
+      transform_ptr_type transform_ptr(_make_ptr(0, 1));
       sketch_type        sketch(transform_ptr);
       for (int i(0); i < 1000; ++i) {
         for (int j(0); j < 1000; ++j) {
@@ -112,7 +112,7 @@ struct init_check {
       CHECK_CONDITION(copy_matches == true, "copy constructor");
     }
     {
-      transform_ptr_type transform_ptr(_make_ptr(0));
+      transform_ptr_type transform_ptr(_make_ptr(0, 1));
       sketch_type        sketch(transform_ptr);
       for (int i(0); i < 1000; ++i) {
         for (int j(0); j < 1000; ++j) {
@@ -158,8 +158,8 @@ struct bad_merge_check {
 
   void operator()(const Parameters &params) const {
     make_ptr_type      _make_ptr = make_ptr_type();
-    transform_ptr_type transform_ptr_1(_make_ptr(32));
-    transform_ptr_type transform_ptr_2(_make_ptr(22));
+    transform_ptr_type transform_ptr_1(_make_ptr(32, 1));
+    transform_ptr_type transform_ptr_2(_make_ptr(22, 2));
     sketch_type        sketch_1(transform_ptr_1);
     sketch_type        sketch_2(transform_ptr_2);
     CHECK_THROWS<std::invalid_argument>(
@@ -189,7 +189,7 @@ struct good_merge_check {
 
   void operator()(const Parameters &params) const {
     make_ptr_type      _make_ptr = make_ptr_type();
-    transform_ptr_type transform_ptr(_make_ptr(8));
+    transform_ptr_type transform_ptr(_make_ptr(8, 1));
     sketch_type        first(transform_ptr);
     sketch_type        middle(transform_ptr);
     sketch_type        last(transform_ptr);
@@ -256,7 +256,7 @@ struct serialize_check {
 
   void operator()(const Parameters &params) const {
     make_ptr_type      _make_ptr{};
-    transform_ptr_type transform_ptr(_make_ptr(params.seed));
+    transform_ptr_type transform_ptr(_make_ptr(params.seed, params.seed + 1));
 
     CHECK_ALL_ARCHIVES(*transform_ptr, "sketch functor");
 
@@ -284,23 +284,22 @@ struct ingest_check {
     return ss.str();
   }
 
-  // std::vector<std::vector<std::uint64_t>> get_uniform_inserts(
-  //     const Parameters &params) const {
-  //   std::mt19937                                 gen(params.seed);
-  //   std::uniform_int_distribution<std::uint64_t> dist(0,
-  //                                                     params.domain_size -
-  //                                                     1);
+  std::vector<std::vector<std::uint64_t>> get_uniform_matrix(
+      const Parameters &params) const {
+    std::mt19937                                 gen(params.seed);
+    std::uniform_int_distribution<std::uint64_t> dist(0,
+                                                      params.domain_size - 1);
 
-  //   std::vector<std::vector<std::uint64_t>> inserts(
-  //       params.observation_count, std::vector<std::uint64_t>(params.count));
+    std::vector<std::vector<std::uint64_t>> matrix(
+        params.count, std::vector<std::uint64_t>(params.count));
 
-  //   for (std::int64_t i(0); i < params.observation_count; ++i) {
-  //     for (std::int64_t j(0); j < params.count; ++j) {
-  //       inserts[i][j] = dist(gen);
-  //     }
-  //   }
-  //   return inserts;
-  // }
+    for (std::int64_t i(0); i < params.count; ++i) {
+      for (std::int64_t j(0); j < params.count; ++j) {
+        matrix[i][j] = dist(gen);
+      }
+    }
+    return matrix;
+  }
 
   // template <typename T>
   // double _l2_distance_sq(const std::vector<T> &lhs,
@@ -323,8 +322,8 @@ struct ingest_check {
     }
     sketch.compactify();
     int    sum(accumulate(sketch, 0.0));
-    double rel_mag((double)sum /
-                   (1000000 * params.range_size * params.replication_count));
+    double rel_mag((double)sum / (1000 * 1000 * params.range_size *
+                                  params.replication_count));
     if (params.verbose == true) {
       std::cout << "\t" << sketch << std::endl;
       std::cout << "\tregister sum (should be near zero): " << sum
@@ -353,20 +352,6 @@ struct ingest_check {
   //   for (int i(0); i < nrows; ++i) {
   //     std::cout << "(" << i << ")\t" << sketches[i] << std::endl;
   //   }
-  // }
-
-  // std::vector<std::vector<register_type>> fill_observation_vector(
-  //     const std::vector<std::vector<std::uint64_t>> &inserts,
-  //     const Parameters                              &params) const {
-  //   std::vector<std::vector<register_type>> observations(
-  //       params.observation_count,
-  //       std::vector<register_type>(params.domain_size));
-  //   for (int i(0); i < params.observation_count; ++i) {
-  //     for (int j(0); j < params.count; ++j) {
-  //       observations[i][inserts[i][j]]++;
-  //     }
-  //   }
-  //   return observations;
   // }
 
   // std::vector<sketch_type> fill_sketch_vector(
@@ -401,11 +386,8 @@ struct ingest_check {
   //   sketch_type sketch(transform_ptr, params.compaction_threshold,
   //                      params.promotion_threshold);
 
-  //   std::vector<std::vector<std::uint64_t>> inserts =
-  //       get_uniform_inserts(params);
-
-  //   std::vector<std::vector<register_type>> observations =
-  //       fill_observation_vector(inserts, params);
+  //   std::vector<std::vector<std::uint64_t>> matrix =
+  //   get_uniform_matrix(params);
 
   //   std::vector<sketch_type> sketches =
   //       fill_sketch_vector(transform_ptr, inserts, params);
@@ -444,8 +426,9 @@ struct ingest_check {
   //         success_rate += 1.0;
   //       }
   //       if (params.verbose) {
-  //         std::cout << "\t(" << i << "," << j << ") ob " << ob_dist << ", sk
-  //         "
+  //         std::cout << "\t(" << i << "," << j << ") ob " << ob_dist
+  //                   << ", sk
+  //                      "
   //                   << sk_dist << " (multiplicative error: 1 +/- " <<
   //                   this_error
   //                   << ") (in bounds: "
@@ -465,9 +448,10 @@ struct ingest_check {
 
   void operator()(const Parameters &params) const {
     make_ptr_type      _make_ptr{};
-    transform_ptr_type transform_ptr(_make_ptr(params.seed));
+    transform_ptr_type transform_ptr(_make_ptr(params.seed, params.seed + 1));
+    transform_ptr_type rhs_ptr(_make_ptr(params.seed + 1, params.seed + 2));
     rel_mag_test(transform_ptr, params);
-    // lemma_check(transform_ptr, params);
+    // lemma_check(lhs_ptr, rhs_prt, params);
   }
 
   // bool in_bounds(const double ob_dist, const double sk_dist,
@@ -611,7 +595,7 @@ struct do_all_tests {
 };
 
 int main(int argc, char **argv) {
-  uint64_t      count(10000);
+  uint64_t      count(1000);
   std::uint64_t range_size(32);
   std::uint64_t replication_count(4);
   std::uint64_t domain_size(4096);

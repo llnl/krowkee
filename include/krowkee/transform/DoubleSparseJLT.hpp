@@ -76,14 +76,15 @@ class DoubleSparseJLT {
    * @param args Any additional parameters required by the hash functions.
    */
   template <typename... Args>
-  DoubleSparseJLT(std::uint64_t seed, const Args &...args) {
+  DoubleSparseJLT(std::uint64_t row_seed, std::uint64_t col_seed,
+                  const Args &...args) {
     _row_hashes.reserve(ReplicationCount);
     _col_hashes.reserve(ReplicationCount);
     for (int i(0); i < ReplicationCount; ++i) {
-      _row_hashes.emplace_back(seed, args...);
-      seed = krowkee::hash::wang64(seed);
-      _col_hashes.emplace_back(seed, args...);
-      seed = krowkee::hash::wang64(seed);
+      _row_hashes.emplace_back(row_seed, args...);
+      row_seed = krowkee::hash::wang64(row_seed);
+      _col_hashes.emplace_back(col_seed, args...);
+      col_seed = krowkee::hash::wang64(col_seed);
     }
   }
 
