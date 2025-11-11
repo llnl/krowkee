@@ -29,6 +29,8 @@ namespace sketch {
  *
  * @tparam RegType The type held by each register.
  * @tparam MergeOp An template merge operator to combine two sketches.
+ * @tparam Size The maximum number of registers. Must equal the embedding
+ * dimension of the transform to be used.
  */
 template <typename RegType, template <typename> class MergeOp, std::size_t Size>
 class Dense {

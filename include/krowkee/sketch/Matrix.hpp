@@ -29,6 +29,8 @@ namespace sketch {
  *
  * @tparam RegType The type held by each register.
  * @tparam MergeOp An template merge operator to combine two sketches.
+ * @tparam RowCount The maximum number of rows. Assumed equal to ColCount.
+ * @tparam ColCount The maximum number of columns. Assumed equal to RowCount.
  */
 template <typename RegType, template <typename> class MergeOp,
           std::size_t RowCount, std::size_t ColCount>

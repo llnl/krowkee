@@ -28,6 +28,8 @@ namespace sketch {
  * @tparam MapType The underlying map class to use for buffered updates to the
  * underlying compacting_map.
  * @tparam KeyType The key type to use for this underlying compacting map.
+ * @tparam Size The maximum number of registers. Must equal the embedding
+ * dimension of the transform to be used.
  */
 template <typename RegType, template <typename> class MergeOp,
           template <typename, typename> class MapType, typename KeyType,
