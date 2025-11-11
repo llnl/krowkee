@@ -64,7 +64,8 @@ using MapSparse32SparseJLT =
 
 template <std::size_t RangeSize, std::size_t ReplicationCount>
 using MapPromotable32SparseJLT = krowkee::sketch::promotable::SparseJLT<
-    register_type, RangeSize, ReplicationCount, std::map, ptr_type>;
+    register_type, RangeSize, ReplicationCount,
+    RangeSize * ReplicationCount / 4, std::map, ptr_type>;
 
 #if __has_include(<boost/container/flat_map.hpp>)
 template <std::size_t RangeSize, std::size_t ReplicationCount>
@@ -75,8 +76,8 @@ using FlatMapSparse32SparseJLT =
 
 template <std::size_t RangeSize, std::size_t ReplicationCount>
 using FlatMapPromotable32SparseJLT = krowkee::sketch::promotable::SparseJLT<
-    register_type, RangeSize, ReplicationCount, boost::container::flat_map,
-    ptr_type>;
+    register_type, RangeSize, ReplicationCount,
+    RangeSize * ReplicationCount / 4, boost::container::flat_map, ptr_type>;
 #endif
 
 template <std::size_t RangeSize, std::size_t ReplicationCount>

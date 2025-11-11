@@ -62,14 +62,10 @@ class Sketch {
    * @param sf_ptr pointer desired linear sketch functor.
    * @param compaction_threshold threshold at which sparse sketches should
    * `compactify` themselves.
-   * @param promotion_threshold threshold at which promotable sketchs should
-   * promote themselves.
    */
   Sketch(const transform_ptr_type &sf_ptr,
-         const std::size_t         compaction_threshold = 100,
-         const std::size_t         promotion_threshold  = 4096)
-      : _container(compaction_threshold, promotion_threshold),
-        _transform_ptr(sf_ptr) {}
+         const std::size_t         compaction_threshold = 100)
+      : _container(compaction_threshold), _transform_ptr(sf_ptr) {}
 
   /**
    * @brief Copy constructor

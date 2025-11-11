@@ -54,15 +54,10 @@ class Sparse {
   /**
    * @brief Construct a new Sparse container object
    *
-   * @tparam Args Other args (ignored)
-   * @param size The number of registers, equal to the range size of the
-   * sketch functor times the number of replications.
    * @param compaction_threshold The size at which the compacting_map buffer
    * triggers compaction.
-   * @param args Ignored by Dense.
    */
-  template <typename... Args>
-  Sparse(const std::size_t compaction_threshold, const Args &...args)
+  Sparse(const std::size_t compaction_threshold)
       : _registers(compaction_threshold) {}
 
   /**
