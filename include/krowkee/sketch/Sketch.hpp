@@ -49,6 +49,7 @@ class Sketch {
 
   static_assert(std::is_same<register_type,
                              typename container_type::register_type>::value);
+  static_assert(SketchFunc::size() == ContainerType::embedding_size());
 
  private:
   transform_ptr_type _transform_ptr;

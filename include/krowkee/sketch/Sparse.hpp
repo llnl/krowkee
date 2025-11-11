@@ -304,6 +304,9 @@ class Sparse {
   /** The maximum possible size of the compacting_map. */
   static constexpr std::size_t max_size() { return Size; }
 
+  /** The size of the embedding. Equal to max_size() */
+  static constexpr std::size_t embedding_size() { return Size; }
+
   /** The size at which the compaction buffer will flush. */
   constexpr std::size_t compaction_threshold() const {
     return _registers.compaction_threshold();

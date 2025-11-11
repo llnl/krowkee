@@ -39,8 +39,14 @@ class Matrix {
   using merge_type     = MergeOp<register_type>;
   using self_type      = Matrix<register_type, MergeOp, RowCount, ColCount>;
 
+  /**Currently assuming that Matrix Objects are always square, but preparing for
+   * a world where they aren't.
+   */
+  static_assert(RowCount == ColCount);
+
  protected:
-  registers_type _registers;
+  static const std::size_t Size = RowCount * ColCount;
+  registers_type           _registers;
 
  public:
   /**
@@ -53,7 +59,7 @@ class Matrix {
    * @param args Ignored by Matrix.
    */
   template <typename... Args>
-  Matrix(const Args &...args) : _registers(RowCount * ColCount) {}
+  Matrix(const Args &...args) : _registers(Size) {}
 
   /**
    * @brief Copy constructor.
@@ -146,13 +152,6 @@ class Matrix {
    * @throws std::invalid_argument if the register sizes do not match.
    */
   constexpr void merge(const self_type &rhs) {
-    if (row_count() != rhs.row_count() || col_count() != rhs.col_count()) {
-      std::stringstream ss;
-      ss << "error: attempting to merge lhs embedding of shape (" << row_count()
-         << ", " << col_count() << ") with rhs embedding of shape ("
-         << rhs.row_count() << ", " << rhs.col_count() << ")";
-      throw std::invalid_argument(ss.str());
-    }
     std::transform(std::begin(_registers), std::end(_registers),
                    std::begin(rhs._registers), std::begin(_registers),
                    merge_type());
@@ -265,7 +264,7 @@ class Matrix {
   constexpr bool is_sparse() const { return false; }
 
   /** The size of the registers vector. */
-  constexpr std::size_t size() const { return _registers.size(); }
+  static constexpr std::size_t size() { return Size; }
 
   /** The number of rows in the registers matrix. */
   static constexpr std::size_t row_count() { return RowCount; }
@@ -274,7 +273,12 @@ class Matrix {
   static constexpr std::size_t col_count() { return ColCount; }
 
   /** The size of the registers vector. */
-  constexpr std::size_t max_size() const { return _registers.size(); }
+  static constexpr std::size_t max_size() { return Size; }
+
+  /** The size of the embedding. Equal to RowCount and ColCount. Assuming that
+   * the matrix is square.
+   */
+  static constexpr std::size_t embedding_size() { return RowCount; }
 
   /** The number of bytes used by each register. */
   constexpr std::size_t reg_size() const { return sizeof(register_type); }

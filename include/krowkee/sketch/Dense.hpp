@@ -144,12 +144,6 @@ class Dense {
    * @throws std::invalid_argument if the register sizes do not match.
    */
   constexpr void merge(const self_type &rhs) {
-    if (size() != rhs.size()) {
-      std::stringstream ss;
-      ss << "error: attempting to merge embedding 1 of dimension " << size()
-         << " with embedding 2 of dimension " << rhs.size();
-      throw std::invalid_argument(ss.str());
-    }
     std::transform(std::begin(_registers), std::end(_registers),
                    std::begin(rhs._registers), std::begin(_registers),
                    merge_type());
@@ -258,6 +252,9 @@ class Dense {
 
   /** The size of the registers vector. */
   static constexpr std::size_t max_size() { return Size; }
+
+  /** The size of the embedding. Equal to max_size() */
+  static constexpr std::size_t embedding_size() { return Size; }
 
   /** The number of bytes used by each register. */
   static constexpr std::size_t reg_size() { return sizeof(register_type); }

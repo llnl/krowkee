@@ -218,6 +218,12 @@ class Promotable {
                                                    : _dense_ptr->size();
   }
 
+  /** The maximum possible size of the sketch, disregarding mode. */
+  static constexpr std::size_t max_size() { return Size; }
+
+  /** The size of the embedding. Equal to max_size() */
+  static constexpr std::size_t embedding_size() { return Size; }
+
   /** True unless we are in Sparse mode and uncompacted. */
   constexpr bool is_compact() const {
     return (_mode == promotable_mode_type::sparse) ? _sparse_ptr->is_compact()
