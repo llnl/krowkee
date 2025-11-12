@@ -237,7 +237,11 @@ class Matrix {
    *
    * @return std::string "Matrix"
    */
-  static constexpr std::string name() { return "Matrix"; }
+  static constexpr std::string name() {
+    std::stringstream ss;
+    ss << "Matrix<" << RowCount << ", " << ColCount << ">";
+    return ss.str();
+  }
 
   /**
    * @brief Returns a description of the fully-qualified type of container.

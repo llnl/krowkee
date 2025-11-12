@@ -240,7 +240,8 @@ class Sketch {
    */
   static constexpr std::string name() {
     std::stringstream ss;
-    ss << container_type::name() << " " << transform_type::name();
+    ss << "Sketch<" << transform_type::name() << ", " << container_type::name()
+       << ">";
     return ss.str();
   }
 
@@ -255,7 +256,8 @@ class Sketch {
    */
   static constexpr std::string full_name() {
     std::stringstream ss;
-    ss << container_type::full_name() << " " << transform_type::full_name();
+    ss << "Sketch<" << transform_type::full_name() << ", "
+       << container_type::full_name() << ">";
     return ss.str();
   }
 

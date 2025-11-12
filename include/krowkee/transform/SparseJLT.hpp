@@ -175,7 +175,12 @@ class SparseJLT {
    *
    * @return std::string "SparseJLT"
    */
-  static constexpr std::string name() { return "SparseJLT"; }
+  static constexpr std::string name() {
+    std::stringstream ss;
+    ss << "SparseJLT<" << RangeSize << ", " << ReplicationCount << ", "
+       << hash_type::name() << ">";
+    return ss.str();
+  }
 
   /**
    * @brief Return a description of the fully-qualified transform type.
@@ -185,9 +190,8 @@ class SparseJLT {
    */
   static constexpr std::string full_name() {
     std::stringstream ss;
-    ss << name() << " using " << ReplicationCount << " replications of "
-       << hash_type::full_name() << " and " << sizeof(register_type)
-       << "-byte registers";
+    ss << "SparseJLT<" << RangeSize << ", " << ReplicationCount << ", "
+       << hash_type::full_name() << ", " << sizeof(register_type) << ">";
     return ss.str();
   }
 

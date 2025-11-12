@@ -206,7 +206,12 @@ class DoubleSparseJLT {
    *
    * @return std::string "DoubleSparseJLT"
    */
-  static constexpr std::string name() { return "DoubleSparseJLT"; }
+  static constexpr std::string name() {
+    std::stringstream ss;
+    ss << "DoubleSparseJLT<" << RangeSize << ", " << ReplicationCount << ", "
+       << hash_type::name() << ">";
+    return ss.str();
+  }
 
   /**
    * @brief Return a description of the fully-qualified transform type.
@@ -216,9 +221,8 @@ class DoubleSparseJLT {
    */
   static constexpr std::string full_name() {
     std::stringstream ss;
-    ss << name() << " using two " << ReplicationCount << " replications of "
-       << hash_type::full_name() << " and " << sizeof(register_type)
-       << "-byte registers";
+    ss << "DoubleSparseJLT<" << RangeSize << ", " << ReplicationCount << ", "
+       << hash_type::full_name() << ", " << sizeof(register_type) << ">";
     return ss.str();
   }
 

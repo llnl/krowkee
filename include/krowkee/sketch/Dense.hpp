@@ -221,7 +221,11 @@ class Dense {
    *
    * @return std::string "Dense"
    */
-  static constexpr std::string name() { return "Dense"; }
+  static constexpr std::string name() {
+    std::stringstream ss;
+    ss << "Dense<" << Size << ">";
+    return ss.str();
+  }
 
   /**
    * @brief Returns a description of the fully-qualified type of container.

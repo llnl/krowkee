@@ -171,7 +171,12 @@ class Promotable {
    *
    * @return std::string "Promotable"
    */
-  static constexpr std::string name() { return "Promotable"; }
+  static constexpr std::string name() {
+    std::stringstream ss;
+    ss << "Promotable<" << Size << ", " << CompactionThreshold << ", "
+       << PromotionThreshold << ", " << typeid(map_type).name() << ">";
+    return ss.str();
+  }
 
   /**
    * @brief Returns a description of the fully-qualified type of container
@@ -181,7 +186,9 @@ class Promotable {
    */
   static constexpr std::string full_name() {
     std::stringstream ss;
-    ss << name() << " using " << krowkee::hash::type_name<map_type>();
+    ss << "Promotable<" << Size << ", " << CompactionThreshold << ", "
+       << PromotionThreshold << ", " << krowkee::hash::type_name<map_type>()
+       << ">";
     return ss.str();
   }
 

@@ -262,7 +262,12 @@ class Sparse {
    *
    * @return std::string "Sparse"
    */
-  static constexpr std::string name() { return "Sparse"; }
+  static constexpr std::string name() {
+    std::stringstream ss;
+    ss << "Sparse<" << Size << ", " << CompactionThreshold << ", "
+       << typeid(map_type).name() << ">";
+    return ss.str();
+  }
 
   /**
    * @brief Returns a description of the fully-qualified type of container
@@ -272,7 +277,8 @@ class Sparse {
    */
   static constexpr std::string full_name() {
     std::stringstream ss;
-    ss << name() << " using " << krowkee::hash::type_name<map_type>();
+    ss << "Sparse<" << Size << ", " << CompactionThreshold << ", "
+       << krowkee::hash::type_name<map_type>() << ">";
     return ss.str();
   }
 
