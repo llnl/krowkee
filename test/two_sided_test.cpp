@@ -589,8 +589,8 @@ void parse_args(int argc, char **argv, Parameters &params) {
 template <std::size_t RangeSize, std::size_t ReplicationCount>
 struct do_all_tests {
   void operator()(const Parameters &params) {
-    perform_tests<TwoSided32JLT<RangeSize, ReplicationCount>, make_ptr_functor>(
-        params);
+    perform_tests<matrix::DoubleSparseJLT<RangeSize, ReplicationCount>,
+                  make_ptr_functor>(params);
   }
 };
 

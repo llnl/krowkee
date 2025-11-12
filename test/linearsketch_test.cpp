@@ -615,13 +615,13 @@ void perform_tests(const Parameters &params) {
   // being investigated is promotable.
   if constexpr (std::is_same<
                     typename sketch_type::container_type,
-                    typename FlatMapPromotable32SparseJLT<
+                    typename promotable::map::SparseJLT<
                         sketch_type::transform_type::range_size(),
                         sketch_type::transform_type::replication_count()>::
                         container_type>::value ||
                 std::is_same<
                     typename sketch_type::container_type,
-                    typename MapPromotable32SparseJLT<
+                    typename promotable::flatmap::SparseJLT<
                         sketch_type::transform_type::range_size(),
                         sketch_type::transform_type::replication_count()>::
                         container_type>::value) {
@@ -742,30 +742,31 @@ template <std::size_t RangeSize, std::size_t ReplicationCount>
 struct choose_tests {
   void operator()(const Parameters &params) {
     if (params.sketch_impl == sketch_impl_type::cst) {
-      perform_tests<Dense32SparseJLT<RangeSize, ReplicationCount>,
+      perform_tests<dense::SparseJLT<RangeSize, ReplicationCount>,
                     make_ptr_functor>(params);
     } else if (params.sketch_impl == sketch_impl_type::sparse_cst) {
       if (params.cmap_impl == cmap_impl_type::std) {
-        perform_tests<MapSparse32SparseJLT<RangeSize, ReplicationCount>,
+        perform_tests<sparse::map::SparseJLT<RangeSize, ReplicationCount>,
                       make_ptr_functor>(params);
 #if __has_include(<boost/container/flat_map.hpp>)
       } else if (params.cmap_impl == cmap_impl_type::boost) {
-        perform_tests<FlatMapSparse32SparseJLT<RangeSize, ReplicationCount>,
+        perform_tests<sparse::flatmap::SparseJLT<RangeSize, ReplicationCount>,
                       make_ptr_functor>(params);
 #endif
       }
     } else if (params.sketch_impl == sketch_impl_type::promotable_cst) {
       if (params.cmap_impl == cmap_impl_type::std) {
-        perform_tests<MapPromotable32SparseJLT<RangeSize, ReplicationCount>,
+        perform_tests<promotable::map::SparseJLT<RangeSize, ReplicationCount>,
                       make_ptr_functor>(params);
 #if __has_include(<boost/container/flat_map.hpp>)
       } else if (params.cmap_impl == cmap_impl_type::boost) {
-        perform_tests<FlatMapPromotable32SparseJLT<RangeSize, ReplicationCount>,
-                      make_ptr_functor>(params);
+        perform_tests<
+            promotable::flatmap::SparseJLT<RangeSize, ReplicationCount>,
+            make_ptr_functor>(params);
 #endif
       }
     } else if (params.sketch_impl == sketch_impl_type::fwht) {
-      perform_tests<Dense32FWHT<RangeSize, ReplicationCount>, make_ptr_functor>(
+      perform_tests<dense::FWHT<RangeSize, ReplicationCount>, make_ptr_functor>(
           params);
     }
   }
@@ -774,19 +775,19 @@ struct choose_tests {
 template <std::size_t RangeSize, std::size_t ReplicationCount>
 struct do_all_tests {
   void operator()(const Parameters &params) {
-    perform_tests<Dense32SparseJLT<RangeSize, ReplicationCount>,
+    perform_tests<dense::SparseJLT<RangeSize, ReplicationCount>,
                   make_ptr_functor>(params);
-    perform_tests<MapSparse32SparseJLT<RangeSize, ReplicationCount>,
+    perform_tests<sparse::map::SparseJLT<RangeSize, ReplicationCount>,
                   make_ptr_functor>(params);
-    perform_tests<MapPromotable32SparseJLT<RangeSize, ReplicationCount>,
+    perform_tests<promotable::map::SparseJLT<RangeSize, ReplicationCount>,
                   make_ptr_functor>(params);
 #if __has_include(<boost/container/flat_map.hpp>)
-    perform_tests<FlatMapSparse32SparseJLT<RangeSize, ReplicationCount>,
+    perform_tests<sparse::flatmap::SparseJLT<RangeSize, ReplicationCount>,
                   make_ptr_functor>(params);
-    perform_tests<FlatMapPromotable32SparseJLT<RangeSize, ReplicationCount>,
+    perform_tests<promotable::flatmap::SparseJLT<RangeSize, ReplicationCount>,
                   make_ptr_functor>(params);
 #endif
-    perform_tests<Dense32FWHT<RangeSize, ReplicationCount>, make_ptr_functor>(
+    perform_tests<dense::FWHT<RangeSize, ReplicationCount>, make_ptr_functor>(
         params);
   }
 };
@@ -809,6 +810,7 @@ int main(int argc, char **argv) {
 
   parse_args(argc, argv, params);
 
+  // do_all_tests<32, 4>{}(params);
   if (do_all == true) {
     dispatch_with_sketch_sizes<do_all_tests, void>(
         params.range_size, params.replication_count, params);
