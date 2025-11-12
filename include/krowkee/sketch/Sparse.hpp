@@ -33,7 +33,7 @@ namespace sketch {
  */
 template <typename RegType, template <typename> class MergeOp,
           template <typename, typename> class MapType, typename KeyType,
-          std::size_t Size>
+          std::size_t Size, std::size_t CompactionThreshold>
 class Sparse {
  public:
   /** Alias for the fully-templated register compacting map type. */
@@ -45,7 +45,8 @@ class Sparse {
   using vec_citer_type = typename registers_type::vec_citer_type;
   using pair_type      = typename registers_type::pair_type;
   using map_type       = typename registers_type::map_type;
-  using self_type      = Sparse<register_type, MergeOp, MapType, KeyType, Size>;
+  using self_type      = Sparse<register_type, MergeOp, MapType, KeyType, Size,
+                                CompactionThreshold>;
 
  protected:
   registers_type _registers;
@@ -53,12 +54,8 @@ class Sparse {
  public:
   /**
    * @brief Construct a new Sparse container object
-   *
-   * @param compaction_threshold The size at which the compacting_map buffer
-   * triggers compaction.
    */
-  Sparse(const std::size_t compaction_threshold)
-      : _registers(compaction_threshold) {}
+  Sparse() : _registers(compaction_threshold()) {}
 
   /**
    * @brief Copy constructor.
@@ -66,16 +63,6 @@ class Sparse {
    * @param rhs The base Sparse container to copy.
    */
   Sparse(const self_type &rhs) : _registers(rhs._registers) {}
-
-  /**
-   * @brief Default constructor for Dense
-   *
-   * @note Only used for move constructor.
-   */
-  Sparse() {}
-
-  // // move constructor
-  // Sparse(self_type &&rhs) : self_type() { std::swap(*this, rhs); }
 
   //////////////////////////////////////////////////////////////////////////////
   // Swaps
@@ -305,8 +292,8 @@ class Sparse {
   static constexpr std::size_t embedding_size() { return Size; }
 
   /** The size at which the compaction buffer will flush. */
-  constexpr std::size_t compaction_threshold() const {
-    return _registers.compaction_threshold();
+  static constexpr std::size_t compaction_threshold() {
+    return CompactionThreshold;
   }
 
   /**

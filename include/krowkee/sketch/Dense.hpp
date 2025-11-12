@@ -46,14 +46,8 @@ class Dense {
  public:
   /**
    * @brief Construct a new Dense container object
-   *
-   * @tparam Args Other args (ignored)
-   * @param size The number of registers, equal to the range size of the sketch
-   * functor times its replication count.
-   * @param args Ignored by Dense.
    */
-  template <typename... Args>
-  Dense(const Args &...args) : _registers(Size) {}
+  Dense() : _registers(Size) {}
 
   /**
    * @brief Copy constructor.
@@ -61,16 +55,6 @@ class Dense {
    * @param rhs The base Dense container to copy.
    */
   Dense(const self_type &rhs) : _registers(rhs._registers) {}
-
-  /**
-   * @brief Default constructor for Dense
-   *
-   * @note Only used for move constructor.
-   */
-  Dense() {}
-
-  // // move constructor
-  // Dense(self_type &&rhs) : self_type() { std::swap(*this, rhs); }
 
   //////////////////////////////////////////////////////////////////////////////
   // Swaps

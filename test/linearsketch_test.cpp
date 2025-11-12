@@ -40,7 +40,6 @@ struct Parameters {
   std::uint64_t    replication_count;
   std::uint64_t    domain_size;
   std::uint64_t    observation_count;
-  std::size_t      compaction_threshold;
   std::uint64_t    seed;
   sketch_impl_type sketch_impl;
   cmap_impl_type   cmap_impl;
@@ -68,8 +67,8 @@ struct init_check {
     {
       transform_ptr_type transform_ptr_1(_make_ptr(0));
       transform_ptr_type transform_ptr_2(_make_ptr(0));
-      sketch_type        sketch_1(transform_ptr_1, params.compaction_threshold);
-      sketch_type        sketch_2(transform_ptr_2, params.compaction_threshold);
+      sketch_type        sketch_1(transform_ptr_1);
+      sketch_type        sketch_2(transform_ptr_2);
       for (int i(0); i < 1000; i++) {
         sketch_1.insert(i);
         sketch_2.insert(i);
@@ -84,7 +83,7 @@ struct init_check {
     }
     {
       transform_ptr_type transform_ptr(_make_ptr(0));
-      sketch_type        sketch(transform_ptr, params.compaction_threshold);
+      sketch_type        sketch(transform_ptr);
       for (int i(0); i < 1000; sketch.insert(i++)) {
       }
       sketch_type sketch2(sketch);
@@ -97,7 +96,7 @@ struct init_check {
     }
     {
       transform_ptr_type transform_ptr(_make_ptr(0));
-      sketch_type        sketch(transform_ptr, params.compaction_threshold);
+      sketch_type        sketch(transform_ptr);
       for (int i(0); i < 1000; sketch.insert(i++)) {
       }
       sketch_type sketch2      = sketch;
@@ -110,7 +109,7 @@ struct init_check {
     }
     {
       transform_ptr_type transform_ptr(_make_ptr(0));
-      sketch_type        sketch(transform_ptr, params.compaction_threshold);
+      sketch_type        sketch(transform_ptr);
 
       bool init_empty = sketch.empty();
 
@@ -184,7 +183,7 @@ struct ingest_check {
 
   void rel_mag_test(const transform_ptr_type &transform_ptr,
                     const Parameters         &params) const {
-    sketch_type sketch(transform_ptr, params.compaction_threshold);
+    sketch_type sketch(transform_ptr);
     for (std::uint64_t i(0); i < params.count; sketch.insert(i++)) {
     }
     sketch.compactify();
@@ -239,9 +238,8 @@ struct ingest_check {
       const transform_ptr_type                      &transform_ptr,
       const std::vector<std::vector<std::uint64_t>> &inserts,
       const Parameters                              &params) const {
-    std::vector<sketch_type> sketches(
-        params.observation_count,
-        sketch_type(transform_ptr, params.compaction_threshold));
+    std::vector<sketch_type> sketches(params.observation_count,
+                                      sketch_type(transform_ptr));
     for (int i(0); i < params.observation_count; ++i) {
       for (int j(0); j < params.count; ++j) {
         sketches[i].insert(inserts[i][j]);
@@ -263,7 +261,7 @@ struct ingest_check {
 
   void lemma_check(const transform_ptr_type &transform_ptr,
                    const Parameters         &params) const {
-    sketch_type sketch(transform_ptr, params.compaction_threshold);
+    sketch_type sketch(transform_ptr);
 
     std::vector<std::vector<std::uint64_t>> inserts =
         get_uniform_inserts(params);
@@ -373,8 +371,8 @@ struct bad_merge_check {
     make_ptr_type      _make_ptr = make_ptr_type();
     transform_ptr_type transform_ptr_1(_make_ptr(32));
     transform_ptr_type transform_ptr_2(_make_ptr(22));
-    sketch_type        sketch_1(transform_ptr_1, params.compaction_threshold);
-    sketch_type        sketch_2(transform_ptr_2, params.compaction_threshold);
+    sketch_type        sketch_1(transform_ptr_1);
+    sketch_type        sketch_2(transform_ptr_2);
     CHECK_THROWS<std::invalid_argument>(
         check_throws_bad_plus_equals<SketchType>,
         "bad merge (+=) with different functor seeds", sketch_1, sketch_2);
@@ -403,11 +401,11 @@ struct good_merge_check {
   void operator()(const Parameters &params) const {
     make_ptr_type      _make_ptr = make_ptr_type();
     transform_ptr_type transform_ptr(_make_ptr(8));
-    sketch_type        first(transform_ptr, params.compaction_threshold);
-    sketch_type        middle(transform_ptr, params.compaction_threshold);
-    sketch_type        last(transform_ptr, params.compaction_threshold);
-    sketch_type        both(transform_ptr, params.compaction_threshold);
-    sketch_type        all(transform_ptr, params.compaction_threshold);
+    sketch_type        first(transform_ptr);
+    sketch_type        middle(transform_ptr);
+    sketch_type        last(transform_ptr);
+    sketch_type        both(transform_ptr);
+    sketch_type        all(transform_ptr);
     for (std::uint64_t i(0); i < 1000; ++i) {
       first.insert(i);
       both.insert(i);
@@ -467,7 +465,7 @@ struct serialize_check {
 
     CHECK_ALL_ARCHIVES(*transform_ptr, "sketch functor");
 
-    sketch_type sketch(transform_ptr, params.compaction_threshold);
+    sketch_type sketch(transform_ptr);
     for (std::uint64_t i(0); i < params.count; sketch.insert(i++)) {
     }
     sketch.compactify();
@@ -498,12 +496,12 @@ struct promotion_check {
   void operator()(const Parameters &params) const {
     make_ptr_type      _make_ptr = make_ptr_type();
     transform_ptr_type transform_ptr(_make_ptr(params.seed));
-    sketch_type        s1(transform_ptr, params.compaction_threshold);
-    sketch_type        s2(transform_ptr, params.compaction_threshold);
-    sketch_type        d1(transform_ptr, params.compaction_threshold);
-    sketch_type        d2(transform_ptr, params.compaction_threshold);
-    sketch_type        d12(transform_ptr, params.compaction_threshold);
-    sketch_type        dall(transform_ptr, params.compaction_threshold);
+    sketch_type        s1(transform_ptr);
+    sketch_type        s2(transform_ptr);
+    sketch_type        d1(transform_ptr);
+    sketch_type        d2(transform_ptr);
+    sketch_type        d12(transform_ptr);
+    sketch_type        dall(transform_ptr);
     int                pt(sketch_type::container_type::promotion_threshold() /
                           sketch_type::transform_type::replication_count());
     for (std::uint64_t i(0); i < pt - 1; ++i) {
@@ -639,7 +637,6 @@ void print_help(char *exe_name) {
                "transforms\n"
             << "\t-d, --domain <int>             - domain of sketch transform\n"
             << "\t-b, --observation_count <int>  - number of sketches to test\n"
-            << "\t-o, --compaction-thresh <int>  - compaction threshold\n"
             << "\t-t, --sketch-type <str>        - sketch type "
                "(cst, sparse_cst, promotable_cst, fwht)\n"
             << "\t-m, --map-type <str>           - map type "
@@ -666,7 +663,6 @@ void parse_args(int argc, char **argv, Parameters &params) {
         {"replication", required_argument, NULL, 'R'},
         {"domain", required_argument, NULL, 'd'},
         {"observation-count", required_argument, NULL, 'b'},
-        {"compaction-thresh", required_argument, NULL, 'o'},
         {"sketch-type", required_argument, NULL, 't'},
         {"map-type", required_argument, NULL, 'm'},
         {"seed", required_argument, NULL, 's'},
@@ -675,7 +671,7 @@ void parse_args(int argc, char **argv, Parameters &params) {
         {NULL, 0, NULL, 0}};
 
     int curind = optind;
-    c          = getopt_long(argc, argv, "-:c:r:R:d:b:o:t:m:s:vh", long_options,
+    c          = getopt_long(argc, argv, "-:c:r:R:d:b:t:m:s:vh", long_options,
                              &option_index);
     if (c == -1) {
       break;
@@ -710,9 +706,6 @@ void parse_args(int argc, char **argv, Parameters &params) {
         break;
       case 'b':
         params.observation_count = std::atoll(optarg);
-        break;
-      case 'o':
-        params.compaction_threshold = std::atoll(optarg);
         break;
       case 't':
         params.sketch_impl = krowkee::util::get_sketch_impl_type(optarg);
@@ -805,16 +798,14 @@ int main(int argc, char **argv) {
   std::uint64_t    domain_size(4096);
   std::uint64_t    observation_count(16);
   std::uint64_t    seed(krowkee::hash::default_seed);
-  std::size_t      compaction_threshold(10);
   sketch_impl_type sketch_impl(sketch_impl_type::cst);
   cmap_impl_type   cmap_impl(cmap_impl_type::std);
   bool             verbose(false);
   bool             do_all(argc == 1);
 
   Parameters params{count,       range_size,        replication_count,
-                    domain_size, observation_count, compaction_threshold,
-                    seed,        sketch_impl,       cmap_impl,
-                    verbose};
+                    domain_size, observation_count, seed,
+                    sketch_impl, cmap_impl,         verbose};
 
   parse_args(argc, argv, params);
 

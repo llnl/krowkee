@@ -54,14 +54,8 @@ class Matrix {
   /**
    * @brief Construct a new Matrix container object. Currently assuming that
    * Matrix objects are always square.
-   *
-   * @tparam Args Other args (ignored)
-   * @param size The number of registers, equal to the range size of the sketch
-   * functor times its replication count.
-   * @param args Ignored by Matrix.
    */
-  template <typename... Args>
-  Matrix(const Args &...args) : _registers(Size) {}
+  Matrix() : _registers(Size) {}
 
   /**
    * @brief Copy constructor.
@@ -69,16 +63,6 @@ class Matrix {
    * @param rhs The base Matrix container to copy.
    */
   Matrix(const self_type &rhs) : _registers(rhs._registers) {}
-
-  /**
-   * @brief Default constructor for Matrix
-   *
-   * @note Only used for move constructor.
-   */
-  Matrix() {}
-
-  // // move constructor
-  // Matrix(self_type &&rhs) : self_type() { std::swap(*this, rhs); }
 
   //////////////////////////////////////////////////////////////////////////////
   // Swaps

@@ -60,12 +60,9 @@ class Sketch {
    * @brief Construct a new Sketch object
    *
    * @param sf_ptr pointer desired linear sketch functor.
-   * @param compaction_threshold threshold at which sparse sketches should
-   * `compactify` themselves.
    */
-  Sketch(const transform_ptr_type &sf_ptr,
-         const std::size_t         compaction_threshold = 100)
-      : _container(compaction_threshold), _transform_ptr(sf_ptr) {}
+  Sketch(const transform_ptr_type &sf_ptr)
+      : _transform_ptr(sf_ptr), _container() {}
 
   /**
    * @brief Copy constructor
@@ -73,7 +70,7 @@ class Sketch {
    * @param rhs `krowkee::sketch::Sketch` to be copied
    */
   Sketch(const self_type &rhs)
-      : _container(rhs._container), _transform_ptr(rhs._transform_ptr) {}
+      : _transform_ptr(rhs._transform_ptr), _container(rhs._container) {}
 
   /**
    * @brief default constructor
@@ -81,20 +78,6 @@ class Sketch {
    * @note Only used for move constructor.
    */
   Sketch() {}
-  // Sketch() : _container(),
-  // _transform_ptr(std::make_shared<transform_type>(1)) {} Sketch() :
-  // _container(), _make_def_ptr(), _transform_ptr(_make_def_ptr(1)) {} Sketch()
-  // : _container(), _transform_ptr(_make_default_ptr()) {
-  //   std::cout << "GETS HERE!!!!!" << std::endl;
-  // }
-  // Sketch() { std::cout << "GETS HERE!!!!!" << std::endl; }
-
-  // /**
-  //  * move constructor
-  //  *
-  //  * @param rhs krowkee::sketch::Sketch to be destructively copied.
-  //  */
-  // Sketch(self_type &&rhs) noexcept : Sketch() { std::swap(*this, rhs); }
 
   //////////////////////////////////////////////////////////////////////////////
   // Cereal Archives

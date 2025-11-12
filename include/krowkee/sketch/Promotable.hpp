@@ -35,8 +35,11 @@ enum class promotable_mode_type : std::uint8_t { sparse, dense };
  */
 template <typename RegType, template <typename> class MergeOp,
           template <typename, typename> class MapType, typename KeyType,
-          std::size_t Size, std::size_t PromotionThreshold>
+          std::size_t Size, std::size_t CompactionThreshold,
+          std::size_t PromotionThreshold>
 class Promotable {
+  static_assert(CompactionThreshold < PromotionThreshold);
+
  public:
   /** Alias for the fully-templated Dense container. */
   using register_type  = RegType;
@@ -45,31 +48,26 @@ class Promotable {
   using dense_ptr_type = std::unique_ptr<dense_type>;
   /** Alias for the fully-templated Sparse container. */
   using sparse_type =
-      krowkee::sketch::Sparse<register_type, MergeOp, MapType, KeyType, Size>;
+      krowkee::sketch::Sparse<register_type, MergeOp, MapType, KeyType, Size,
+                              CompactionThreshold>;
   using map_type        = typename sparse_type::map_type;
   using sparse_ptr_type = std::unique_ptr<sparse_type>;
   /** Alias for the fully-templated Promotable container. */
   using self_type = Promotable<register_type, MergeOp, MapType, KeyType, Size,
-                               PromotionThreshold>;
+                               CompactionThreshold, PromotionThreshold>;
 
  private:
   dense_ptr_type       _dense_ptr;
   sparse_ptr_type      _sparse_ptr;
-  std::size_t          _compaction_threshold;
   promotable_mode_type _mode;
 
  public:
   /**
    * @brief Initialize the size parameters and create the base container.
-   *
-   * @param size Size argument for maximum number of registers.
-   * @param compaction_threshold Size argument for constructing sparse
-   *     container.
    */
-  Promotable(const std::size_t compaction_threshold)
-      : _compaction_threshold(compaction_threshold),
-        _mode(promotable_mode_type::sparse),
-        _sparse_ptr(std::make_unique<sparse_type>(compaction_threshold)) {}
+  Promotable()
+      : _mode(promotable_mode_type::sparse),
+        _sparse_ptr(std::make_unique<sparse_type>()) {}
 
   /**
    * @brief Copy constructor.
@@ -79,8 +77,7 @@ class Promotable {
    *
    * @param rhs container to be copied.
    */
-  Promotable(const self_type &rhs)
-      : _compaction_threshold(rhs._compaction_threshold), _mode(rhs._mode) {
+  Promotable(const self_type &rhs) : _mode(rhs._mode) {
     if (_mode == promotable_mode_type::sparse) {
       sparse_ptr_type sparse_ptr(
           std::make_unique<sparse_type>(*rhs._sparse_ptr));
@@ -90,23 +87,6 @@ class Promotable {
       std::swap(dense_ptr, _dense_ptr);
     }
   }
-
-  /**
-   * @brief Default constructor
-   *
-   * @note Only use for move constructor.
-   */
-  Promotable()
-      : _mode(promotable_mode_type::sparse), _sparse_ptr(), _dense_ptr() {}
-
-  // /**
-  //  * move constructor
-  //  *
-  //  * @param rhs r-value self_type to be destructively copied.
-  //  */
-  // Promotable(self_type &&rhs) noexcept : Promotable() {
-  //   std::swap(*this, rhs);
-  // }
 
   //////////////////////////////////////////////////////////////////////////////
   // Swaps
@@ -118,7 +98,6 @@ class Promotable {
    * @param rhs The right-hand containr.
    */
   friend void swap(self_type &lhs, self_type &rhs) {
-    std::swap(lhs._compaction_threshold, rhs._compaction_threshold);
     std::swap(lhs._mode, rhs._mode);
     if (lhs._mode == promotable_mode_type::sparse) {
       std::swap(lhs._sparse_ptr, rhs._sparse_ptr);
@@ -140,7 +119,7 @@ class Promotable {
    */
   template <class Archive>
   void save(Archive &oarchive) const {
-    oarchive(_compaction_threshold, _mode);
+    oarchive(_mode);
     if (_mode == promotable_mode_type::sparse) {
       oarchive(_sparse_ptr);
     } else {
@@ -156,7 +135,7 @@ class Promotable {
    */
   template <class Archive>
   void load(Archive &iarchive) {
-    iarchive(_compaction_threshold, _mode);
+    iarchive(_mode);
     if (_mode == promotable_mode_type::sparse) {
       iarchive(_sparse_ptr);
     } else {
@@ -242,10 +221,8 @@ class Promotable {
   constexpr promotable_mode_type mode() const { return _mode; }
 
   /** The size at which the compaction buffer will flush. */
-  constexpr std::size_t compaction_threshold() const {
-    return (_mode == promotable_mode_type::sparse)
-               ? _sparse_ptr->compaction_threshold()
-               : _dense_ptr->compaction_threshold();
+  static constexpr std::size_t compaction_threshold() {
+    return CompactionThreshold;
   }
 
   /**
@@ -327,7 +304,7 @@ class Promotable {
       _dense_ptr.reset(nullptr);
       _mode = promotable_mode_type::sparse;
       _sparse_ptr.reset(nullptr);
-      _sparse_ptr = std::make_unique<sparse_type>(_compaction_threshold);
+      _sparse_ptr = std::make_unique<sparse_type>();
     }
   }
 
@@ -516,9 +493,7 @@ class Promotable {
       throw std::logic_error("Attempt to promote uncompacted container!");
     }
 
-    // this dummy is currently requried due to collision with the default
-    // constructor.
-    _dense_ptr = std::make_unique<dense_type>(1);
+    _dense_ptr = std::make_unique<dense_type>();
     merge_from_sparse(*this);
     _sparse_ptr.reset(nullptr);
     _mode = promotable_mode_type::dense;
