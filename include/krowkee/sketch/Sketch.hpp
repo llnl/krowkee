@@ -49,26 +49,20 @@ class Sketch {
 
   static_assert(std::is_same<register_type,
                              typename container_type::register_type>::value);
+  static_assert(SketchFunc::size() == ContainerType::embedding_size());
 
  private:
   transform_ptr_type _transform_ptr;
-  container_type     _con;
+  container_type     _container;
 
  public:
   /**
    * @brief Construct a new Sketch object
    *
    * @param sf_ptr pointer desired linear sketch functor.
-   * @param compaction_threshold threshold at which sparse sketches should
-   * `compactify` themselves.
-   * @param promotion_threshold threshold at which promotable sketchs should
-   * promote themselves.
    */
-  Sketch(const transform_ptr_type &sf_ptr,
-         const std::size_t         compaction_threshold = 100,
-         const std::size_t         promotion_threshold  = 4096)
-      : _con(sf_ptr->size(), compaction_threshold, promotion_threshold),
-        _transform_ptr(sf_ptr) {}
+  Sketch(const transform_ptr_type &sf_ptr)
+      : _transform_ptr(sf_ptr), _container() {}
 
   /**
    * @brief Copy constructor
@@ -76,7 +70,7 @@ class Sketch {
    * @param rhs `krowkee::sketch::Sketch` to be copied
    */
   Sketch(const self_type &rhs)
-      : _con(rhs._con), _transform_ptr(rhs._transform_ptr) {}
+      : _transform_ptr(rhs._transform_ptr), _container(rhs._container) {}
 
   /**
    * @brief default constructor
@@ -84,19 +78,6 @@ class Sketch {
    * @note Only used for move constructor.
    */
   Sketch() {}
-  // Sketch() : _con(), _transform_ptr(std::make_shared<transform_type>(1)) {}
-  // Sketch() : _con(), _make_def_ptr(), _transform_ptr(_make_def_ptr(1)) {}
-  // Sketch() : _con(), _transform_ptr(_make_default_ptr()) {
-  //   std::cout << "GETS HERE!!!!!" << std::endl;
-  // }
-  // Sketch() { std::cout << "GETS HERE!!!!!" << std::endl; }
-
-  // /**
-  //  * move constructor
-  //  *
-  //  * @param rhs krowkee::sketch::Sketch to be destructively copied.
-  //  */
-  // Sketch(self_type &&rhs) noexcept : Sketch() { std::swap(*this, rhs); }
 
   //////////////////////////////////////////////////////////////////////////////
   // Cereal Archives
@@ -111,7 +92,7 @@ class Sketch {
    */
   template <class Archive>
   void serialize(Archive &archive) {
-    archive(_transform_ptr, _con);
+    archive(_transform_ptr, _container);
   }
 #endif
 
@@ -123,7 +104,7 @@ class Sketch {
    * @return const container_type& A reference to the internal register
    * container object.
    */
-  const container_type &container() { return _con; }
+  const container_type &container() { return _container; }
 
   //////////////////////////////////////////////////////////////////////////////
   // Insertion
@@ -141,7 +122,26 @@ class Sketch {
    */
   template <typename... ItemArgs>
   constexpr void insert(const ItemArgs &...args) {
-    (*_transform_ptr)(_con, args...);
+    (*_transform_ptr)(_container, args...);
+  }
+
+  /**
+   * @brief Insert item into registers using sketch functor, assuming a tuple of
+   * indices as the first argument.
+   *
+   * Example could involve `({i, j}, multiplicity)` where `i` and `j` are the
+   * row and columnn indices of the matrix insertion, respectively, and
+   * `multiplicity` is the number of insert repetitions to perform.
+   *
+   * @tparam ItemArgs types of parameters of the stream object to be inserted.
+   * Will be used to construct an krowkee::stream::Element object.
+   * @param indices Describes data structure indices to be inserted.
+   * @param args Addtional arguments describing the stream object.
+   */
+  template <typename... ItemArgs>
+  constexpr void insert(const std::pair<std::uint64_t, std::uint64_t> &indices,
+                        const ItemArgs &...args) {
+    (*_transform_ptr)(_container, indices, args...);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -153,7 +153,7 @@ class Sketch {
    * functionality.
    *
    */
-  void compactify() { _con.compactify(); }
+  void compactify() { _container.compactify(); }
 
   //////////////////////////////////////////////////////////////////////////////
   // Clear & Empty
@@ -162,12 +162,12 @@ class Sketch {
   /**
    * @brief Signal sketch container to remove all information.
    */
-  void clear() { _con.clear(); }
+  void clear() { _container.clear(); }
 
   /**
    * @brief Check if container is holding any state.
    */
-  bool empty() const { return _con.empty(); }
+  bool empty() const { return _container.empty(); }
 
   //////////////////////////////////////////////////////////////////////////////
   // Merge Operators
@@ -189,7 +189,7 @@ class Sketch {
          << *(_transform_ptr) << ") and (" << *(rhs._transform_ptr) << ")";
       throw std::invalid_argument(ss.str());
     }
-    _con += rhs._con;
+    _container += rhs._container;
     return *this;
   }
 
@@ -212,20 +212,20 @@ class Sketch {
   //////////////////////////////////////////////////////////////////////////////
 
   /** Mutable begin iterator. */
-  constexpr auto begin() { return std::begin(_con); }
+  constexpr auto begin() { return std::begin(_container); }
   /** Const begin iterator. */
-  constexpr auto begin() const { return std::cbegin(_con); }
+  constexpr auto begin() const { return std::cbegin(_container); }
   /** Const begin iterator. */
-  constexpr auto cbegin() const { return std::cbegin(_con); }
+  constexpr auto cbegin() const { return std::cbegin(_container); }
   /** Mutable end iterator. */
-  constexpr auto end() { return std::end(_con); }
+  constexpr auto end() { return std::end(_container); }
   /** Const end iterator. */
-  constexpr auto end() const { return std::cend(_con); }
+  constexpr auto end() const { return std::cend(_container); }
   /** Const end iterator. */
-  constexpr auto cend() { return std::cend(_con); }
+  constexpr auto cend() { return std::cend(_container); }
 
   // constexpr const std::uint8_t &operator[](const std::uint64_t index) const {
-  //   return _con[index];
+  //   return _container[index];
   // }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -240,7 +240,8 @@ class Sketch {
    */
   static constexpr std::string name() {
     std::stringstream ss;
-    ss << container_type::name() << " " << transform_type::name();
+    ss << "Sketch<" << transform_type::name() << ", " << container_type::name()
+       << ">";
     return ss.str();
   }
 
@@ -255,7 +256,8 @@ class Sketch {
    */
   static constexpr std::string full_name() {
     std::stringstream ss;
-    ss << container_type::full_name() << " " << transform_type::full_name();
+    ss << "Sketch<" << transform_type::full_name() << ", "
+       << container_type::full_name() << ">";
     return ss.str();
   }
 
@@ -265,14 +267,14 @@ class Sketch {
    * @return true The container is sparse.
    * @return false The container is not sparse.
    */
-  constexpr bool is_sparse() const { return _con.is_sparse(); }
+  constexpr bool is_sparse() const { return _container.is_sparse(); }
 
   /**
    * @brief Get the number of registers, real or notional, in the container.
    *
    * @return constexpr std::size_t The size of the container.
    */
-  constexpr std::size_t size() const { return _con.size(); }
+  constexpr std::size_t size() const { return _container.size(); }
 
   /** The number of bytes used by each register. */
   constexpr std::size_t reg_size() const { return sizeof(register_type); }
@@ -293,7 +295,7 @@ class Sketch {
    * @return constexpr std::size_t The compaction threshold.
    */
   constexpr std::size_t compaction_threshold() const {
-    return _con.compaction_threshold();
+    return _container.compaction_threshold();
   }
 
   /**
@@ -302,7 +304,7 @@ class Sketch {
    * @return std::vector<register_type> The register vector.
    */
   std::vector<register_type> register_vector() const {
-    return _con.register_vector();
+    return _container.register_vector();
   }
 
   /**
@@ -347,7 +349,7 @@ class Sketch {
     if (!lhs.same_functors(rhs)) {
       return false;
     }
-    return lhs._con == rhs._con;
+    return lhs._container == rhs._container;
   }
 
   /**
@@ -376,7 +378,7 @@ class Sketch {
    */
   friend void swap(self_type &lhs, self_type &rhs) {
     std::swap(lhs._transform_ptr, rhs._transform_ptr);
-    swap(lhs._con, rhs._con);
+    std::swap(lhs._container, rhs._container);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -410,7 +412,7 @@ class Sketch {
    * @return std::ostream& The new stream state.
    */
   friend std::ostream &operator<<(std::ostream &os, const self_type &sk) {
-    os << sk._con;
+    os << sk._container;
     return os;
   }
 
@@ -428,7 +430,7 @@ class Sketch {
    */
   template <typename RetType>
   friend RetType accumulate(const self_type &sk, const RetType init) {
-    return accumulate(sk._con, init);
+    return accumulate(sk._container, init);
   }
 };
 

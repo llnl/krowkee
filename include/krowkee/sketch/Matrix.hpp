@@ -20,47 +20,55 @@ namespace sketch {
 /// https://stackoverflow.com/questions/4421706/what-are-the-basic-rules-and-idioms-for-operator-overloading
 
 /**
- * @brief General Dense Sketch Container
+ * @brief General Matrix Sketch Container
  *
  * Implements the container handling infrastructure of any sketch whose atomic
- * elements include a fixed size set of  of register values and supporting a
- * merge operation consisting of the application of an element-wise operator on
- * pairs of register vectors.
+ * elements include a fixed size set of register values organized into a matrix,
+ * and supporting a merge operation consisting of the application of an
+ * element-wise operator on pairs of register matrices.
  *
  * @tparam RegType The type held by each register.
  * @tparam MergeOp An template merge operator to combine two sketches.
- * @tparam Size The maximum number of registers. Must equal the embedding
- * dimension of the transform to be used.
+ * @tparam RowCount The maximum number of rows. Assumed equal to ColCount.
+ * @tparam ColCount The maximum number of columns. Assumed equal to RowCount.
  */
-template <typename RegType, template <typename> class MergeOp, std::size_t Size>
-class Dense {
+template <typename RegType, template <typename> class MergeOp,
+          std::size_t RowCount, std::size_t ColCount>
+class Matrix {
  public:
   using register_type  = RegType;
   using registers_type = std::vector<register_type>;
   using merge_type     = MergeOp<register_type>;
-  using self_type      = Dense<register_type, MergeOp, Size>;
+  using self_type      = Matrix<register_type, MergeOp, RowCount, ColCount>;
+
+  /**Currently assuming that Matrix Objects are always square, but preparing for
+   * a world where they aren't.
+   */
+  static_assert(RowCount == ColCount);
 
  protected:
-  registers_type _registers;
+  static const std::size_t Size = RowCount * ColCount;
+  registers_type           _registers;
 
  public:
   /**
-   * @brief Construct a new Dense container object
+   * @brief Construct a new Matrix container object. Currently assuming that
+   * Matrix objects are always square.
    */
-  Dense() : _registers(Size) {}
+  Matrix() : _registers(Size) {}
 
   /**
    * @brief Copy constructor.
    *
-   * @param rhs The base Dense container to copy.
+   * @param rhs The base Matrix container to copy.
    */
-  Dense(const self_type &rhs) : _registers(rhs._registers) {}
+  Matrix(const self_type &rhs) : _registers(rhs._registers) {}
 
   //////////////////////////////////////////////////////////////////////////////
   // Swaps
   //////////////////////////////////////////////////////////////////////////////
   /**
-   * @brief Swap two Dense containers.
+   * @brief Swap two Matrix containers.
    *
    * @param lhs The left-hand container.
    * @param rhs The right-hand container.
@@ -116,7 +124,7 @@ class Dense {
   // Erase
   //////////////////////////////////////////////////////////////////////////////
 
-  constexpr void erase(const std::uint64_t index) {}
+  constexpr void erase(const std::pair<std::uint64_t, std::uint64_t> indices) {}
 
   //////////////////////////////////////////////////////////////////////////////
   // Merge operators
@@ -139,9 +147,9 @@ class Dense {
    * @brief Operator overload for convenience for embeddings without additional
    * consistency checks.
    *
-   * @param rhs the other Dense. Care must be taken to ensure that
+   * @param rhs the other Matrix. Care must be taken to ensure that
    *     one does not merge subspace embeddings of different types.
-   * @return self_type& `this` Dense, having been merged with `rhs`.
+   * @return self_type& `this` Matrix, having been merged with `rhs`.
    */
   self_type &operator+=(const self_type &rhs) {
     merge(rhs);
@@ -149,7 +157,7 @@ class Dense {
   }
 
   /**
-   * @brief Merge two Dense containers.
+   * @brief Merge two Matrix containers.
    *
    * @param lhs The left-hand container.
    * @param rhs The right-hand container.
@@ -189,27 +197,35 @@ class Dense {
     return std::cend(_registers);
   }
 
-  /**
-   * @brief Const access Dense at `index`.
-   *
-   * @param index The index of the underlying vector to index. Must be less than
-   * `size`.
-   * @return constexpr const register_type& A const reference to
-   * `_registers[index]`.
-   */
-  constexpr const register_type &operator[](const std::uint64_t index) const {
-    return _registers.get(index);
+  constexpr std::uint64_t get_index(
+      const std::pair<std::uint64_t, std::uint64_t> &indices) const {
+    const std::uint64_t &row_index = indices.first;
+    const std::uint64_t &col_index = indices.second;
+    return row_index * row_count() + col_index;
   }
 
   /**
+   * @brief Const access Matrix at `indices` pair.
+   *
+   * @param indices The row and column indices of the underlying matrix to
+   * index. Must be less than `row_count` and `col_count`, respectively.
+   * @return constexpr const register_type& A const reference to the object at
+   * the indicated register.
+   */
+  constexpr const register_type &operator[](
+      const std::pair<std::uint64_t, std::uint64_t> &indices) const {
+    return _registers.get(get_index(indices));
+  }
+  /**
    * @brief Access Dense at `index`.
    *
-   * @param index The index of the underlying vector to index. Must be less than
-   * `size`.
-   * @return register_type& A reference to `_registers[index]`.
+   * @param indices The row and column indices of the underlying matrix to
+   * index. Must be less than `row_count` and `col_count`, respectively.
+   * @return register_type& A reference to the object at the indicated register.
    */
-  register_type &operator[](const std::uint64_t index) {
-    return _registers.at(index);
+  register_type &operator[](
+      const std::pair<std::uint64_t, std::uint64_t> &indices) {
+    return _registers.at(get_index(indices));
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -219,35 +235,43 @@ class Dense {
   /**
    * @brief Returns a description of the type of container.
    *
-   * @return std::string "Dense"
+   * @return std::string "Matrix"
    */
   static constexpr std::string name() {
     std::stringstream ss;
-    ss << "Dense<" << Size << ">";
+    ss << "Matrix<" << RowCount << ", " << ColCount << ">";
     return ss.str();
   }
 
   /**
    * @brief Returns a description of the fully-qualified type of container.
    *
-   * @return std::string "Dense"
+   * @return std::string "Matrix"
    */
   static constexpr std::string full_name() { return name(); }
 
-  /** Dense is also not Sparse. */
+  /** Matrix is also not Sparse. */
   constexpr bool is_sparse() const { return false; }
 
   /** The size of the registers vector. */
   static constexpr std::size_t size() { return Size; }
 
+  /** The number of rows in the registers matrix. */
+  static constexpr std::size_t row_count() { return RowCount; }
+
+  /** The number of columns in the registers matrix. */
+  static constexpr std::size_t col_count() { return ColCount; }
+
   /** The size of the registers vector. */
   static constexpr std::size_t max_size() { return Size; }
 
-  /** The size of the embedding. Equal to max_size() */
-  static constexpr std::size_t embedding_size() { return Size; }
+  /** The size of the embedding. Equal to RowCount and ColCount. Assuming that
+   * the matrix is square.
+   */
+  static constexpr std::size_t embedding_size() { return RowCount; }
 
   /** The number of bytes used by each register. */
-  static constexpr std::size_t reg_size() { return sizeof(register_type); }
+  constexpr std::size_t reg_size() const { return sizeof(register_type); }
 
   constexpr std::size_t compaction_threshold() const { return 0; }
 
@@ -288,7 +312,8 @@ class Dense {
    * @return false At least one register disagrees.
    */
   friend constexpr bool operator==(const self_type &lhs, const self_type &rhs) {
-    return lhs.same_registers(rhs);
+    return lhs.row_count() == rhs.row_count() &&
+           lhs.col_count() == rhs.col_count() && lhs.same_registers(rhs);
   }
 
   /**
@@ -336,12 +361,18 @@ class Dense {
    * @return std::ostream& The new stream state.
    */
   friend std::ostream &operator<<(std::ostream &os, const self_type &sk) {
-    int idx = 0;
+    int row_idx = 0;
+    int col_idx = 0;
     for_each(sk, [&](const auto &p) {
-      if (idx != 0) {
+      if (col_idx == sk.col_count()) {
+        col_idx = 0;
+        ++row_idx;
+        os << "\n";
+      }
+      if (col_idx != 0) {
         os << " ";
       }
-      os << "(" << idx++ << "," << std::int64_t(p) << ")";
+      os << "(" << row_idx << "," << col_idx++ << "," << std::int64_t(p) << ")";
     });
     return os;
   }

@@ -28,9 +28,12 @@ namespace sketch {
  * @tparam MapType The underlying map class to use for buffered updates to the
  * underlying compacting_map.
  * @tparam KeyType The key type to use for this underlying compacting map.
+ * @tparam Size The maximum number of registers. Must equal the embedding
+ * dimension of the transform to be used.
  */
 template <typename RegType, template <typename> class MergeOp,
-          template <typename, typename> class MapType, typename KeyType>
+          template <typename, typename> class MapType, typename KeyType,
+          std::size_t Size, std::size_t CompactionThreshold>
 class Sparse {
  public:
   /** Alias for the fully-templated register compacting map type. */
@@ -42,44 +45,24 @@ class Sparse {
   using vec_citer_type = typename registers_type::vec_citer_type;
   using pair_type      = typename registers_type::pair_type;
   using map_type       = typename registers_type::map_type;
-  using self_type      = Sparse<register_type, MergeOp, MapType, KeyType>;
+  using self_type      = Sparse<register_type, MergeOp, MapType, KeyType, Size,
+                                CompactionThreshold>;
 
  protected:
   registers_type _registers;
-  std::size_t    _size;
 
  public:
   /**
    * @brief Construct a new Sparse container object
-   *
-   * @tparam Args Other args (ignored)
-   * @param size The number of registers, equal to the range size of the
-   * sketch functor times the number of replications.
-   * @param compaction_threshold The size at which the compacting_map buffer
-   * triggers compaction.
-   * @param args Ignored by Dense.
    */
-  template <typename... Args>
-  Sparse(const std::size_t size, const std::size_t compaction_threshold,
-         const Args &...args)
-      : _size(size), _registers(compaction_threshold) {}
+  Sparse() : _registers(compaction_threshold()) {}
 
   /**
    * @brief Copy constructor.
    *
    * @param rhs The base Sparse container to copy.
    */
-  Sparse(const self_type &rhs) : _size(rhs._size), _registers(rhs._registers) {}
-
-  /**
-   * @brief Default constructor for Dense
-   *
-   * @note Only used for move constructor.
-   */
-  Sparse() {}
-
-  // // move constructor
-  // Sparse(self_type &&rhs) : self_type() { std::swap(*this, rhs); }
+  Sparse(const self_type &rhs) : _registers(rhs._registers) {}
 
   //////////////////////////////////////////////////////////////////////////////
   // Swaps
@@ -98,7 +81,6 @@ class Sparse {
    * @param rhs The right-hand container.
    */
   friend void swap(self_type &lhs, self_type &rhs) {
-    std::swap(lhs._size, rhs._size);
     swap(lhs._registers, rhs._registers);
   }
 
@@ -114,7 +96,7 @@ class Sparse {
    */
   template <class Archive>
   void serialize(Archive &archive) {
-    archive(_size, _registers);
+    archive(_registers);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -280,7 +262,12 @@ class Sparse {
    *
    * @return std::string "Sparse"
    */
-  static constexpr std::string name() { return "Sparse"; }
+  static constexpr std::string name() {
+    std::stringstream ss;
+    ss << "Sparse<" << Size << ", " << CompactionThreshold << ", "
+       << typeid(map_type).name() << ">";
+    return ss.str();
+  }
 
   /**
    * @brief Returns a description of the fully-qualified type of container
@@ -290,7 +277,8 @@ class Sparse {
    */
   static constexpr std::string full_name() {
     std::stringstream ss;
-    ss << name() << " using " << krowkee::hash::type_name<map_type>();
+    ss << "Sparse<" << Size << ", " << CompactionThreshold << ", "
+       << krowkee::hash::type_name<map_type>() << ">";
     return ss.str();
   }
 
@@ -301,14 +289,17 @@ class Sparse {
   constexpr std::size_t size() const { return _registers.size(); }
 
   /** The number of bytes used by each register. */
-  constexpr std::size_t reg_size() const { return sizeof(register_type); }
+  static constexpr std::size_t reg_size() { return sizeof(register_type); }
 
   /** The maximum possible size of the compacting_map. */
-  constexpr std::size_t max_size() const { return _size; }
+  static constexpr std::size_t max_size() { return Size; }
+
+  /** The size of the embedding. Equal to max_size() */
+  static constexpr std::size_t embedding_size() { return Size; }
 
   /** The size at which the compaction buffer will flush. */
-  constexpr std::size_t compaction_threshold() const {
-    return _registers.compaction_threshold();
+  static constexpr std::size_t compaction_threshold() {
+    return CompactionThreshold;
   }
 
   /**
@@ -322,7 +313,7 @@ class Sparse {
     if (is_compact() == false) {
       throw std::logic_error("Bad attempt to export uncompacted map!");
     }
-    std::vector<register_type> ret(_size);
+    std::vector<register_type> ret(Size);
     std::for_each(std::cbegin(_registers), std::cend(_registers),
                   [&ret](const std::pair<KeyType, register_type> &elem) {
                     ret[elem.first] = elem.second;
@@ -333,17 +324,6 @@ class Sparse {
   //////////////////////////////////////////////////////////////////////////////
   // Equality operators
   //////////////////////////////////////////////////////////////////////////////
-  /**
-   * @brief Checks whether another Sparse container has the same size.
-   *
-   * @param rhs The other container.
-   * @return true The sizes agree.
-   * @return false The sizes disagree.
-   */
-  constexpr bool same_parameters(const self_type &rhs) const {
-    return _size == rhs._size;
-  }
-
   /**
    * @brief Checks whether another Sparse container has the same register state.
    *
@@ -364,11 +344,11 @@ class Sparse {
    * @return false At least one register disagrees.
    */
   friend constexpr bool operator==(const self_type &lhs, const self_type &rhs) {
-    return lhs.same_parameters(rhs) && lhs.same_registers(rhs);
+    return lhs.same_registers(rhs);
   }
 
   /**
-   * @brief CHecks inequality between two Sparse containers.
+   * @brief Checks inequality between two Sparse containers.
    *
    * @param lhs The left-hand container.
    * @param rhs The right-hand container.

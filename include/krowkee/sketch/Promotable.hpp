@@ -30,50 +30,44 @@ enum class promotable_mode_type : std::uint8_t { sparse, dense };
  * @tparam MapType The underlying map class to use for buffered updates to the
  * underlying compacting_map.
  * @tparam KeyType The key type to use for this underlying compacting map.
+ * @tparam Size The maximum number of registers. Must equal the embedding
+ * dimension of the transform to be used.
  */
 template <typename RegType, template <typename> class MergeOp,
-          template <typename, typename> class MapType, typename KeyType>
+          template <typename, typename> class MapType, typename KeyType,
+          std::size_t Size, std::size_t CompactionThreshold,
+          std::size_t PromotionThreshold>
 class Promotable {
+  static_assert(CompactionThreshold < PromotionThreshold);
+
  public:
   /** Alias for the fully-templated Dense container. */
   using register_type  = RegType;
   using merge_type     = MergeOp<register_type>;
-  using dense_type     = krowkee::sketch::Dense<register_type, MergeOp>;
+  using dense_type     = krowkee::sketch::Dense<register_type, MergeOp, Size>;
   using dense_ptr_type = std::unique_ptr<dense_type>;
   /** Alias for the fully-templated Sparse container. */
   using sparse_type =
-      krowkee::sketch::Sparse<register_type, MergeOp, MapType, KeyType>;
+      krowkee::sketch::Sparse<register_type, MergeOp, MapType, KeyType, Size,
+                              CompactionThreshold>;
   using map_type        = typename sparse_type::map_type;
   using sparse_ptr_type = std::unique_ptr<sparse_type>;
   /** Alias for the fully-templated Promotable container. */
-  using self_type = Promotable<register_type, MergeOp, MapType, KeyType>;
+  using self_type = Promotable<register_type, MergeOp, MapType, KeyType, Size,
+                               CompactionThreshold, PromotionThreshold>;
 
  private:
   dense_ptr_type       _dense_ptr;
   sparse_ptr_type      _sparse_ptr;
-  std::size_t          _size;
-  std::size_t          _compaction_threshold;
-  std::size_t          _promotion_threshold;
   promotable_mode_type _mode;
 
  public:
   /**
    * @brief Initialize the size parameters and create the base container.
-   *
-   * @param size Size argument for maximum number of registers.
-   * @param compaction_threshold Size argument for constructing sparse
-   *     container.
-   * @param promotion_threshold Threshold from promoting from Sparse
-   * representation to Dense representation.
    */
-  Promotable(const std::size_t size, const std::size_t compaction_threshold,
-             const std::size_t promotion_threshold)
-      : _size(size),
-        _compaction_threshold(compaction_threshold),
-        _promotion_threshold(promotion_threshold),
-        _mode(promotable_mode_type::sparse),
-        _sparse_ptr(std::make_unique<sparse_type>(size, compaction_threshold)) {
-  }
+  Promotable()
+      : _mode(promotable_mode_type::sparse),
+        _sparse_ptr(std::make_unique<sparse_type>()) {}
 
   /**
    * @brief Copy constructor.
@@ -83,11 +77,7 @@ class Promotable {
    *
    * @param rhs container to be copied.
    */
-  Promotable(const self_type &rhs)
-      : _size(rhs._size),
-        _compaction_threshold(rhs._compaction_threshold),
-        _promotion_threshold(rhs._promotion_threshold),
-        _mode(rhs._mode) {
+  Promotable(const self_type &rhs) : _mode(rhs._mode) {
     if (_mode == promotable_mode_type::sparse) {
       sparse_ptr_type sparse_ptr(
           std::make_unique<sparse_type>(*rhs._sparse_ptr));
@@ -97,23 +87,6 @@ class Promotable {
       std::swap(dense_ptr, _dense_ptr);
     }
   }
-
-  /**
-   * @brief Default constructor
-   *
-   * @note Only use for move constructor.
-   */
-  Promotable()
-      : _mode(promotable_mode_type::sparse), _sparse_ptr(), _dense_ptr() {}
-
-  // /**
-  //  * move constructor
-  //  *
-  //  * @param rhs r-value self_type to be destructively copied.
-  //  */
-  // Promotable(self_type &&rhs) noexcept : Promotable() {
-  //   std::swap(*this, rhs);
-  // }
 
   //////////////////////////////////////////////////////////////////////////////
   // Swaps
@@ -125,9 +98,6 @@ class Promotable {
    * @param rhs The right-hand containr.
    */
   friend void swap(self_type &lhs, self_type &rhs) {
-    std::swap(lhs._size, rhs._size);
-    std::swap(lhs._compaction_threshold, rhs._compaction_threshold);
-    std::swap(lhs._promotion_threshold, rhs._promotion_threshold);
     std::swap(lhs._mode, rhs._mode);
     if (lhs._mode == promotable_mode_type::sparse) {
       std::swap(lhs._sparse_ptr, rhs._sparse_ptr);
@@ -149,7 +119,7 @@ class Promotable {
    */
   template <class Archive>
   void save(Archive &oarchive) const {
-    oarchive(_size, _compaction_threshold, _promotion_threshold, _mode);
+    oarchive(_mode);
     if (_mode == promotable_mode_type::sparse) {
       oarchive(_sparse_ptr);
     } else {
@@ -165,7 +135,7 @@ class Promotable {
    */
   template <class Archive>
   void load(Archive &iarchive) {
-    iarchive(_size, _compaction_threshold, _promotion_threshold, _mode);
+    iarchive(_mode);
     if (_mode == promotable_mode_type::sparse) {
       iarchive(_sparse_ptr);
     } else {
@@ -201,7 +171,12 @@ class Promotable {
    *
    * @return std::string "Promotable"
    */
-  static constexpr std::string name() { return "Promotable"; }
+  static constexpr std::string name() {
+    std::stringstream ss;
+    ss << "Promotable<" << Size << ", " << CompactionThreshold << ", "
+       << PromotionThreshold << ", " << typeid(map_type).name() << ">";
+    return ss.str();
+  }
 
   /**
    * @brief Returns a description of the fully-qualified type of container
@@ -211,7 +186,9 @@ class Promotable {
    */
   static constexpr std::string full_name() {
     std::stringstream ss;
-    ss << name() << " using " << krowkee::hash::type_name<map_type>();
+    ss << "Promotable<" << Size << ", " << CompactionThreshold << ", "
+       << PromotionThreshold << ", " << krowkee::hash::type_name<map_type>()
+       << ">";
     return ss.str();
   }
 
@@ -221,6 +198,12 @@ class Promotable {
     return (_mode == promotable_mode_type::sparse) ? _sparse_ptr->size()
                                                    : _dense_ptr->size();
   }
+
+  /** The maximum possible size of the sketch, disregarding mode. */
+  static constexpr std::size_t max_size() { return Size; }
+
+  /** The size of the embedding. Equal to max_size() */
+  static constexpr std::size_t embedding_size() { return Size; }
 
   /** True unless we are in Sparse mode and uncompacted. */
   constexpr bool is_compact() const {
@@ -234,21 +217,19 @@ class Promotable {
   }
 
   /** The number of bytes used by each register. */
-  constexpr std::size_t reg_size() const { return sizeof(register_type); }
+  static constexpr std::size_t reg_size() { return sizeof(register_type); }
 
   /** The size at which we switch from Sparse mode to Dense mode. */
-  constexpr std::size_t promotion_threshold() const {
-    return _promotion_threshold;
+  static constexpr std::size_t promotion_threshold() {
+    return PromotionThreshold;
   }
 
   /** Get the current mode. */
   constexpr promotable_mode_type mode() const { return _mode; }
 
   /** The size at which the compaction buffer will flush. */
-  constexpr std::size_t compaction_threshold() const {
-    return (_mode == promotable_mode_type::sparse)
-               ? _sparse_ptr->compaction_threshold()
-               : _dense_ptr->compaction_threshold();
+  static constexpr std::size_t compaction_threshold() {
+    return CompactionThreshold;
   }
 
   /**
@@ -270,18 +251,6 @@ class Promotable {
   //////////////////////////////////////////////////////////////////////////////
 
   /**
-   * @brief Checks whether another Promotable container has the same promotion
-   * threshold.
-   *
-   * @param rhs The other container.
-   * @return true The thresholds agree.
-   * @return false The thresholds disagree.
-   */
-  constexpr bool same_parameters(const self_type &rhs) const {
-    return _promotion_threshold == rhs._promotion_threshold;
-  }
-
-  /**
    * @brief Checks equality between two Promotable containers
    *
    * @note[bwp] do we want to be able to compare sparse to dense containers
@@ -294,7 +263,7 @@ class Promotable {
    * disagree.
    */
   friend constexpr bool operator==(const self_type &lhs, const self_type &rhs) {
-    if (lhs.same_parameters(rhs) == false || lhs._mode != rhs._mode) {
+    if (lhs._mode != rhs._mode) {
       return false;
     }
     if (lhs._mode == promotable_mode_type::sparse) {
@@ -342,7 +311,7 @@ class Promotable {
       _dense_ptr.reset(nullptr);
       _mode = promotable_mode_type::sparse;
       _sparse_ptr.reset(nullptr);
-      _sparse_ptr = std::make_unique<sparse_type>(_size, _compaction_threshold);
+      _sparse_ptr = std::make_unique<sparse_type>();
     }
   }
 
@@ -439,7 +408,7 @@ class Promotable {
    */
   register_type &operator[](const std::uint64_t index) {
     if (_mode == promotable_mode_type::sparse) {
-      if (size() == _promotion_threshold) {
+      if (size() == promotion_threshold()) {
         compactify();
         promote();
         return (*_dense_ptr)[index];
@@ -460,16 +429,12 @@ class Promotable {
    * @return self_type& `this` after merging rhs.
    */
   self_type &operator+=(const self_type &rhs) {
-    if (same_parameters(rhs) == false) {
-      throw std::invalid_argument(
-          "containers do not have congruent parameters!");
-    }
     if (_mode == rhs._mode) {
       if (_mode == promotable_mode_type::sparse) {
         // sparse_type tmp(*rhs._sparse_ptr);
         // *_sparse_ptr += tmp;
         *_sparse_ptr += *rhs._sparse_ptr;
-        if (size() >= _promotion_threshold) {
+        if (size() >= promotion_threshold()) {
           promote();
         }
       } else {
@@ -535,7 +500,7 @@ class Promotable {
       throw std::logic_error("Attempt to promote uncompacted container!");
     }
 
-    _dense_ptr = std::make_unique<dense_type>(_size);
+    _dense_ptr = std::make_unique<dense_type>();
     merge_from_sparse(*this);
     _sparse_ptr.reset(nullptr);
     _mode = promotable_mode_type::dense;

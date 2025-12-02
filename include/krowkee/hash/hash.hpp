@@ -121,7 +121,7 @@ struct WangHash : public Base<RangeSize> {
    */
   static constexpr std::string full_name() {
     std::stringstream ss;
-    ss << name() << " with range " << self_type::size();
+    ss << name() << "<" << self_type::size() << ">";
     return ss.str();
   }
 
@@ -214,7 +214,7 @@ struct MulShift : public Base<RangeSize> {
 
   static constexpr std::string full_name() {
     std::stringstream ss;
-    ss << name() << " with range " << self_type::size();
+    ss << name() << "<" << self_type::size() << ">";
     return ss.str();
   }
 
@@ -312,7 +312,7 @@ struct MulAddShift : public Base<RangeSize> {
    */
   static constexpr std::string full_name() {
     std::stringstream ss;
-    ss << name() << " with range " << self_type::size();
+    ss << name() << "<" << self_type::size() << ">";
     return ss.str();
   }
 
