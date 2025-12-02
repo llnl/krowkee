@@ -613,6 +613,7 @@ void perform_tests(const Parameters &params) {
 #endif
   // This is a really complex compile-time check indicating whether the sketch
   // being investigated is promotable.
+#if __has_include(<boost/container/flat_map.hpp>)
   if constexpr (std::is_same<
                     typename sketch_type::container_type,
                     typename promotable::map::SparseJLT<
@@ -627,6 +628,7 @@ void perform_tests(const Parameters &params) {
                         container_type>::value) {
     do_test<promotion_check<sketch_type, MakePtrFunc>>(params);
   }
+#endif
 }
 
 void print_help(char *exe_name) {
