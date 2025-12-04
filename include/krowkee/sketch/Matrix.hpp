@@ -5,14 +5,80 @@
 
 #pragma once
 
-#if __has_include(<cereal/types/vector.hpp>)
-#include <cereal/types/vector.hpp>
+#if __has_include(<cereal/cereal.hpp>)
+#include <cereal/archives/binary.hpp>
+#include <cereal/cereal.hpp>
+#include <ygm/detail/ygm_cereal_archive.hpp>
 #endif
+
+#include <Eigen/Dense>
 
 #include <algorithm>
 #include <sstream>
 #include <vector>
 
+#if __has_include(<cereal/cereal.hpp>)
+// Based upon
+// https://stackoverflow.com/questions/22884216/serializing-eigenmatrix-using-cereal-library
+namespace cereal {
+// cereal for Eigen::PlainObject binary archive
+template <class Archive, class Derived>
+inline typename std::enable_if<
+    traits::is_output_serializable<BinaryData<typename Derived::Scalar>,
+                                   Archive>::value,
+    void>::type
+CEREAL_SAVE_FUNCTION_NAME(Archive                               &archive,
+                          Eigen::PlainObjectBase<Derived> const &array) {
+  using array_type = Eigen::PlainObjectBase<Derived>;
+  if (array_type::RowsAtCompileTime == Eigen::Dynamic) {
+    archive(array.rows());
+  }
+  if (array_type::ColsAtCompileTime == Eigen::Dynamic) {
+    archive(array.cols());
+  }
+  archive(binary_data(array.data(),
+                      array.size() * sizeof(typename Derived::Scalar)));
+}
+
+template <class Archive, class Derived>
+inline typename std::enable_if<
+    traits::is_input_serializable<BinaryData<typename Derived::Scalar>,
+                                  Archive>::value,
+    void>::type
+CEREAL_LOAD_FUNCTION_NAME(Archive                         &archive,
+                          Eigen::PlainObjectBase<Derived> &array) {
+  using array_type  = Eigen::PlainObjectBase<Derived>;
+  Eigen::Index rows = array_type::RowsAtCompileTime;
+  Eigen::Index cols = array_type::ColsAtCompileTime;
+  if (rows == Eigen::Dynamic) {
+    archive(rows);
+  }
+  if (cols == Eigen::Dynamic) {
+    archive(cols);
+  }
+  array.resize(rows, cols);
+  archive(binary_data(array.data(),
+                      static_cast<std::size_t>(
+                          rows * cols * sizeof(typename Derived::Scalar))));
+}
+}  // namespace cereal
+#endif
+
+namespace krowkee::sketch::detail {
+// Eigen-compatible implementation of numpy.allclose() derived from
+// https://stackoverflow.com/questions/15051367/how-to-compare-vectors-approximately-in-eigen
+template <typename DerivedA, typename DerivedB>
+bool allclose(
+    const Eigen::DenseBase<DerivedA> &a, const Eigen::DenseBase<DerivedB> &b,
+    const typename DerivedA::RealScalar &rtol =
+        Eigen::NumTraits<typename DerivedA::RealScalar>::dummy_precision(),
+    const typename DerivedA::RealScalar &atol =
+        Eigen::NumTraits<typename DerivedA::RealScalar>::epsilon()) {
+  return ((a.derived() - b.derived()).array().abs() <=
+          (atol + rtol * b.derived().array().abs()))
+      .all();
+}
+}  // namespace krowkee::sketch::detail
 namespace krowkee {
 namespace sketch {
 
@@ -27,6 +93,9 @@ namespace sketch {
  * and supporting a merge operation consisting of the application of an
  * element-wise operator on pairs of register matrices.
  *
+ * @note MergeOp template parameter is currently unused and may be removed in a
+ * future update.
+ *
  * @tparam RegType The type held by each register.
  * @tparam MergeOp An template merge operator to combine two sketches.
  * @tparam RowCount The maximum number of rows. Assumed equal to ColCount.
@@ -36,12 +105,14 @@ template <typename RegType, template <typename> class MergeOp,
           std::size_t RowCount, std::size_t ColCount>
 class Matrix {
  public:
-  using register_type  = RegType;
-  using registers_type = std::vector<register_type>;
-  using merge_type     = MergeOp<register_type>;
-  using self_type      = Matrix<register_type, MergeOp, RowCount, ColCount>;
+  using register_type = RegType;
+  using registers_type =
+      Eigen::Matrix<register_type, Eigen::Dynamic, Eigen::Dynamic>;
+  using merge_type = MergeOp<register_type>;
+  using self_type  = Matrix<register_type, MergeOp, RowCount, ColCount>;
 
-  /**Currently assuming that Matrix Objects are always square, but preparing for
+  /**
+   * Currently assuming that Matrix Objects are always square, but preparing for
    * a world where they aren't.
    */
   static_assert(RowCount == ColCount);
@@ -55,7 +126,7 @@ class Matrix {
    * @brief Construct a new Matrix container object. Currently assuming that
    * Matrix objects are always square.
    */
-  Matrix() : _registers(Size) {}
+  Matrix() : _registers(RowCount, ColCount) {}
 
   /**
    * @brief Copy constructor.
@@ -83,7 +154,7 @@ class Matrix {
 
 #if __has_include(<cereal/types/vector.hpp>)
   /**
-   * @brief Serialize Dense object to/from `cereal` archive.
+   * @brief Serialize Matrix object to/from `cereal` archive.
    *
    * @tparam Archive `cereal` archive type.
    * @param archive The `cereal` archive to which to serialize the sketch.
@@ -110,15 +181,12 @@ class Matrix {
   /**
    * @brief Set all registers to 0.
    */
-  void clear() { std::fill(std::begin(_registers), std::end(_registers), 0); }
+  void clear() { _registers.setZero(RowCount, ColCount); }
 
   /**
    * @brief Check if all registers are 0.
    */
-  bool empty() const {
-    return std::all_of(std::begin(_registers), std::end(_registers),
-                       [](const auto i) { return i == 0; });
-  }
+  bool empty() const { return _registers.isZero(0); }
 
   //////////////////////////////////////////////////////////////////////////////
   // Erase
@@ -131,24 +199,17 @@ class Matrix {
   //////////////////////////////////////////////////////////////////////////////
 
   /**
-   * @brief Merge other Dense registers into `this`.
+   * @brief Merge other Matrix registers into `this`.
    *
-   * @param rhs the other Dense. Care must be taken to ensure that one does not
-   * merge sketches of different types.
-   * @throws std::invalid_argument if the register sizes do not match.
+   * @param rhs the other Matrix.
    */
-  constexpr void merge(const self_type &rhs) {
-    std::transform(std::begin(_registers), std::end(_registers),
-                   std::begin(rhs._registers), std::begin(_registers),
-                   merge_type());
-  }
+  constexpr void merge(const self_type &rhs) { _registers += rhs._registers; }
 
   /**
    * @brief Operator overload for convenience for embeddings without additional
    * consistency checks.
    *
-   * @param rhs the other Matrix. Care must be taken to ensure that
-   *     one does not merge subspace embeddings of different types.
+   * @param rhs the other Matrix.
    * @return self_type& `this` Matrix, having been merged with `rhs`.
    */
   self_type &operator+=(const self_type &rhs) {
@@ -174,34 +235,27 @@ class Matrix {
 
   /** Mutable begin iterator. */
   constexpr typename registers_type::iterator begin() {
-    return std::begin(_registers);
+    return std::begin(_registers.reshaped());
   }
   /** Const begin iterator. */
   constexpr typename registers_type::const_iterator begin() const {
-    return std::cbegin(_registers);
+    return std::cbegin(_registers.reshaped());
   }
   /** Const begin iterator. */
   constexpr typename registers_type::const_iterator cbegin() const {
-    return std::cbegin(_registers);
+    return std::cbegin(_registers.reshaped());
   }
   /** Mutable end iterator. */
   constexpr typename registers_type::iterator end() {
-    return std::end(_registers);
+    return std::end(_registers.reshaped());
   }
   /** Const end iterator. */
   constexpr typename registers_type::const_iterator end() const {
-    return std::cend(_registers);
+    return std::cend(_registers.reshaped());
   }
   /** Const end iterator. */
   constexpr typename registers_type::const_iterator cend() {
-    return std::cend(_registers);
-  }
-
-  constexpr std::uint64_t get_index(
-      const std::pair<std::uint64_t, std::uint64_t> &indices) const {
-    const std::uint64_t &row_index = indices.first;
-    const std::uint64_t &col_index = indices.second;
-    return row_index * row_count() + col_index;
+    return std::cend(_registers.reshaped());
   }
 
   /**
@@ -214,7 +268,7 @@ class Matrix {
    */
   constexpr const register_type &operator[](
       const std::pair<std::uint64_t, std::uint64_t> &indices) const {
-    return _registers.get(get_index(indices));
+    return _registers(indices.first, indices.second);
   }
   /**
    * @brief Access Dense at `index`.
@@ -225,7 +279,7 @@ class Matrix {
    */
   register_type &operator[](
       const std::pair<std::uint64_t, std::uint64_t> &indices) {
-    return _registers.at(get_index(indices));
+    return _registers(indices.first, indices.second);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -295,12 +349,16 @@ class Matrix {
   /**
    * @brief Checks whether another Dense container has the same register state.
    *
+   * @note allows for small disagreements in floating point representations that
+   * may arise from merging, so will return true even in cases where register
+   * sets are not exactly equivalent.
+   *
    * @param rhs The other container.
    * @return true The registers agree.
    * @return false At least one register disagrees.
    */
   constexpr bool same_registers(const self_type &rhs) const {
-    return _registers == rhs._registers;
+    return detail::allclose(_registers, rhs._registers);
   }
 
   /**
@@ -312,8 +370,7 @@ class Matrix {
    * @return false At least one register disagrees.
    */
   friend constexpr bool operator==(const self_type &lhs, const self_type &rhs) {
-    return lhs.row_count() == rhs.row_count() &&
-           lhs.col_count() == rhs.col_count() && lhs.same_registers(rhs);
+    return lhs.same_registers(rhs);
   }
 
   /**
@@ -354,26 +411,14 @@ class Matrix {
    *
    * Output format is a space-delmined list of (key, value) pairs.
    *
-   * @note Intended for debugging only.
+   * @note Intended for debugging only. Now using Eigen's default print style.
    *
    * @param os The output stream.
    * @param sk The Dense object.
    * @return std::ostream& The new stream state.
    */
   friend std::ostream &operator<<(std::ostream &os, const self_type &sk) {
-    int row_idx = 0;
-    int col_idx = 0;
-    for_each(sk, [&](const auto &p) {
-      if (col_idx == sk.col_count()) {
-        col_idx = 0;
-        ++row_idx;
-        os << "\n";
-      }
-      if (col_idx != 0) {
-        os << " ";
-      }
-      os << "(" << row_idx << "," << col_idx++ << "," << std::int64_t(p) << ")";
-    });
+    os << sk._registers;
     return os;
   }
 
@@ -391,7 +436,8 @@ class Matrix {
    */
   template <typename RetType>
   friend RetType accumulate(const self_type &sk, const RetType init) {
-    return std::accumulate(std::cbegin(sk), std::cend(sk), init);
+    return std::accumulate(std::cbegin(sk._registers.reshaped()),
+                           std::cend(sk._registers.reshaped()), init);
   }
 
   /**
@@ -403,7 +449,8 @@ class Matrix {
    */
   template <typename Func>
   friend void for_each(const self_type &sk, const Func &func) {
-    std::for_each(std::cbegin(sk._registers), std::cend(sk._registers), func);
+    std::for_each(std::cbegin(sk._registers.reshaped()),
+                  std::cend(sk._registers.reshaped()), func);
   }
 };
 

@@ -171,6 +171,19 @@ struct bad_merge_check {
   }
 };
 
+template <typename... Sketches>
+void sketch_both(Eigen::MatrixXf matrix, Sketches &...sketches) {
+  int i(0);
+  for (const auto &row : matrix.rowwise()) {
+    int j(0);
+    for (const auto &element : row) {
+      (..., (sketches.insert({i, j}, element)));
+      ++j;
+    }
+    ++i;
+  }
+}
+
 /**
  * Verify that merge (+/+=) operators work as expected.
  */
@@ -190,52 +203,58 @@ struct good_merge_check {
   void operator()(const Parameters &params) const {
     make_ptr_type      _make_ptr = make_ptr_type();
     transform_ptr_type transform_ptr(_make_ptr(8, 1));
-    sketch_type        first(transform_ptr);
-    sketch_type        middle(transform_ptr);
-    sketch_type        last(transform_ptr);
-    sketch_type        both(transform_ptr);
-    sketch_type        all(transform_ptr);
-    for (std::uint64_t i(0); i < 1000; ++i) {
-      for (std::uint64_t j(0); j < 1000; ++j) {
-        first.insert({i, j});
-        both.insert({i, j});
-        all.insert({i, j});
-      }
-    }
-    for (std::uint64_t i(1000); i < 2000; ++i) {
-      for (std::uint64_t j(1000); j < 2000; ++j) {
-        middle.insert({i, j});
-        both.insert({i, j});
-        all.insert({i, j});
-      }
-    }
-    for (std::uint64_t i(1000); i < 2000; ++i) {
-      for (std::uint64_t j(1000); j < 2000; ++j) {
-        last.insert({i, j});
-        all.insert({i, j});
-      }
-    }
-    first.compactify();
-    middle.compactify();
-    last.compactify();
-    both.compactify();
-    all.compactify();
-    sketch_type bb = (first + middle);
-    bb.compactify();
+    sketch_type        sketch_A(transform_ptr);
+    sketch_type        sketch_B(transform_ptr);
+    sketch_type        sketch_C(transform_ptr);
+    sketch_type        sketch_AB(transform_ptr);
+    sketch_type        sketch_ABC(transform_ptr);
+
+    Eigen::MatrixXf matrix_A = Eigen::MatrixXf::Random(128, 128);
+    Eigen::MatrixXf matrix_B = Eigen::MatrixXf::Random(128, 128);
+    Eigen::MatrixXf matrix_C = Eigen::MatrixXf::Random(128, 128);
+
+    sketch_both(matrix_A, sketch_A, sketch_AB, sketch_ABC);
+    sketch_both(matrix_B, sketch_B, sketch_AB, sketch_ABC);
+    sketch_both(matrix_C, sketch_C, sketch_ABC);
+
     {
-      bool merge_success = both == bb;
+      sketch_type merge_AB      = (sketch_A + sketch_B);
+      bool        merge_success = merge_AB == sketch_AB;
+      if (merge_success == false) {
+        std::cout << "merge_AB:" << std::endl
+                  << merge_AB << std::endl
+                  << std::endl;
+        std::cout << "sketch_AB:" << std::endl
+                  << sketch_AB << std::endl
+                  << std::endl;
+      }
       CHECK_CONDITION(merge_success == true, "merge (+)");
     }
     {
-      sketch_type aa = first + middle + last;
-      aa.compactify();
-      bool multimerge_success = all == aa;
+      sketch_type merge_ABC          = (sketch_A + sketch_B + sketch_C);
+      bool        multimerge_success = merge_ABC == sketch_ABC;
+      if (multimerge_success == false) {
+        std::cout << "merge_ABC:" << std::endl
+                  << merge_ABC << std::endl
+                  << std::endl;
+        std::cout << "sketch_ABC:" << std::endl
+                  << sketch_ABC << std::endl
+                  << std::endl;
+      }
       CHECK_CONDITION(multimerge_success == true, "multi-merge (+, +)");
     }
     {
-      first += middle;
-      bool inplace_merge_success = both == first;
-      CHECK_CONDITION(inplace_merge_success == true, "merge (+=)");
+      sketch_A += sketch_B;
+      bool inplace_merge_success = sketch_A == sketch_AB;
+      if (inplace_merge_success == false) {
+        std::cout << "sketch_A:" << std::endl
+                  << sketch_A << std::endl
+                  << std::endl;
+        std::cout << "sketch_AB:" << std::endl
+                  << sketch_AB << std::endl
+                  << std::endl;
+      }
+      CHECK_CONDITION(inplace_merge_success == true, "merge (+)");
     }
   }
 };
@@ -301,17 +320,6 @@ struct ingest_check {
     return matrix;
   }
 
-  // template <typename T>
-  // double _l2_distance_sq(const std::vector<T> &lhs,
-  //                        const std::vector<T> &rhs) const {
-  //   assert(lhs.size() == rhs.size());
-  //   double dist_sq(0);
-  //   for (int i(0); i < lhs.size(); ++i) {
-  //     dist_sq += std::pow(lhs[i] - rhs[i], 2);
-  //   }
-  //   return dist_sq;
-  // }
-
   void rel_mag_test(const transform_ptr_type &transform_ptr,
                     const Parameters         &params) const {
     sketch_type sketch(transform_ptr);
@@ -332,120 +340,6 @@ struct ingest_check {
     CHECK_CONDITION(rel_mag < 0.1, "register sum relative magnitude near zero");
   }
 
-  // template <typename T>
-  // void print_mat(const char *name, std::vector<std::vector<T>> &inserts,
-  //                const int nrows, const int ncosketch) const {
-  //   std::cout << std::endl;
-  //   std::cout << name << ":" << std::endl;
-  //   for (int i(0); i < nrows; ++i) {
-  //     std::cout << "(" << i << ")\t";
-  //     for (int j(0); j < ncosketch; ++j) {
-  //       std::cout << " " << inserts[i][j];
-  //     }
-  //     std::cout << std::endl;
-  //   }
-  // }
-
-  // void print_mat(std::vector<sketch_type> &sketches, const int nrows) const {
-  //   std::cout << std::endl;
-  //   std::cout << "sketches:" << std::endl;
-  //   for (int i(0); i < nrows; ++i) {
-  //     std::cout << "(" << i << ")\t" << sketches[i] << std::endl;
-  //   }
-  // }
-
-  // std::vector<sketch_type> fill_sketch_vector(
-  //     const transform_ptr_type                      &transform_ptr,
-  //     const std::vector<std::vector<std::uint64_t>> &inserts,
-  //     const Parameters                              &params) const {
-  //   std::vector<sketch_type> sketches(
-  //       params.observation_count,
-  //       sketch_type(transform_ptr, params.compaction_threshold,
-  //                   params.promotion_threshold));
-  //   for (int i(0); i < params.observation_count; ++i) {
-  //     for (int j(0); j < params.count; ++j) {
-  //       sketches[i].insert(inserts[i][j]);
-  //     }
-  //     sketches[i].compactify();
-  //   }
-  //   return sketches;
-  // }
-
-  // std::vector<std::vector<register_type>> fill_projection_vector(
-  //     const std::vector<sketch_type> &sketches,
-  //     const Parameters               &params) const {
-  //   std::vector<std::vector<register_type>> projections;
-  //   for (int i(0); i < params.observation_count; ++i) {
-  //     projections.push_back(sketches[i].scaled_registers());
-  //   }
-  //   return projections;
-  // }
-
-  // void lemma_check(const transform_ptr_type &transform_ptr,
-  //                  const Parameters         &params) const {
-  //   sketch_type sketch(transform_ptr, params.compaction_threshold,
-  //                      params.promotion_threshold);
-
-  //   std::vector<std::vector<std::uint64_t>> matrix =
-  //   get_uniform_matrix(params);
-
-  //   std::vector<sketch_type> sketches =
-  //       fill_sketch_vector(transform_ptr, inserts, params);
-
-  //   std::vector<std::vector<register_type>> projections =
-  //       fill_projection_vector(sketches, params);
-
-  //   double expected_epsilon =
-  //       std::sqrt(16 * std::log(params.observation_count) /
-  //                 (params.range_size * params.range_size));
-  //   // compute distances
-  //   if (params.verbose) {
-  //     print_mat("inserts", inserts, params.observation_count, params.count);
-  //     print_mat("observations", observations, params.observation_count,
-  //               params.domain_size);
-  //     print_mat(sketches, params.observation_count);
-  //     print_mat("projections", projections, params.observation_count,
-  //               params.range_size * params.replication_count);
-  //     std::cout << std::endl;
-  //     std::cout << "projected vectors:" << std::endl;
-  //   }
-  //   double success_rate(0.0);
-  //   double empirical_epsilon;
-  //   int    trials(0);
-  //   for (int i(0); i < params.observation_count; ++i) {
-  //     for (int j(0); j < params.observation_count; ++j) {
-  //       if (i == j) {
-  //         break;
-  //       }
-  //       ++trials;
-  //       double ob_dist    = _l2_distance_sq(observations[i],
-  //       observations[j]); double sk_dist    = _l2_distance_sq(projections[i],
-  //       projections[j]); double this_error = mul_error(ob_dist, sk_dist);
-  //       empirical_epsilon += this_error;
-  //       if (in_bounds(ob_dist, sk_dist, expected_epsilon)) {
-  //         success_rate += 1.0;
-  //       }
-  //       if (params.verbose) {
-  //         std::cout << "\t(" << i << "," << j << ") ob " << ob_dist
-  //                   << ", sk
-  //                      "
-  //                   << sk_dist << " (multiplicative error: 1 +/- " <<
-  //                   this_error
-  //                   << ") (in bounds: "
-  //                   << in_bounds(ob_dist, sk_dist, expected_epsilon) << ")"
-  //                   << std::endl;
-  //       }
-  //     }
-  //   }
-  //   success_rate /= trials;
-  //   empirical_epsilon /= trials;
-  //   bool lemma_guarantee_success = success_rate > 0.5;
-  //   CHECK_CONDITION(lemma_guarantee_success == true, "lemma guarantee (",
-  //                   trials, " trials, ", success_rate,
-  //                   " success rate, expected epsilon=", expected_epsilon,
-  //                   ", mean empirical epsilon=", empirical_epsilon, ")");
-  // }
-
   void operator()(const Parameters &params) const {
     make_ptr_type      _make_ptr{};
     transform_ptr_type transform_ptr(_make_ptr(params.seed, params.seed + 1));
@@ -453,16 +347,33 @@ struct ingest_check {
     rel_mag_test(transform_ptr, params);
     // lemma_check(lhs_ptr, rhs_prt, params);
   }
+};
 
-  // bool in_bounds(const double ob_dist, const double sk_dist,
-  //                const double epsilon) const {
-  //   return (sk_dist < (1 + epsilon) * ob_dist) &&
-  //          (sk_dist > (1 - epsilon) * ob_dist);
-  // }
+template <typename SketchType, template <typename> class MakePtrFunc>
+struct spot_check {
+  using sketch_type        = SketchType;
+  using transform_type     = typename sketch_type::transform_type;
+  using transform_ptr_type = typename sketch_type::transform_ptr_type;
+  using make_ptr_type      = MakePtrFunc<transform_type>;
 
-  // double mul_error(const double ob_dist, const double sk_dist) const {
-  //   return std::abs(1 - sk_dist / ob_dist);
-  // }
+  constexpr std::string name() const {
+    std::stringstream ss;
+    ss << transform_type::name() << " spot check";
+    return ss.str();
+  }
+
+  void operator()(const Parameters &params) const {
+    using embedding_type      = dense::SparseJLT<sketch_type::range_size(),
+                                                 sketch_type::replication_count()>;
+    using embedding_tptr_type = typename embedding_type::transform_ptr_type;
+
+    make_ptr_type      _make_ptr = make_ptr_type();
+    transform_ptr_type transform_ptr(_make_ptr(params.seed, params.seed + 54));
+    sketch_type        first(transform_ptr);
+    sketch_type        second(transform_ptr);
+    sketch_type        both(transform_ptr);
+    Eigen::MatrixXf    matrix_A = Eigen::MatrixXf::Random(128, 128);
+  }
 };
 
 /**
@@ -485,6 +396,7 @@ void perform_tests(const Parameters &params) {
   std::cout << std::endl << std::endl;
 
   do_test<init_check<sketch_type, MakePtrFunc>>(params);
+  // do_test<spot_check<sketch_type, MakePtrFunc>>(params);
   do_test<bad_merge_check<sketch_type, MakePtrFunc>>(params);
   do_test<good_merge_check<sketch_type, MakePtrFunc>>(params);
   do_test<ingest_check<sketch_type, MakePtrFunc>>(params);
