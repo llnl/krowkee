@@ -57,6 +57,9 @@ class DoubleSparseJLT {
   using col_transform_ptr_type = PtrType<col_transform_type>;
   using self_type = DoubleSparseJLT<register_type, HashType, PtrType, RangeSize,
                                     ReplicationCount>;
+  using indices_type    = typename row_transform_type::indices_type;
+  using polarities_type = typename row_transform_type::polarities_type;
+  using update_type     = typename row_transform_type::update_type;
 
  private:
   row_transform_ptr_type _row_transform_ptr;
@@ -129,10 +132,9 @@ class DoubleSparseJLT {
                                typename ContainerType::register_type>::value);
     using merge_type = typename ContainerType::merge_type;
     const Element<register_type> stream_element(item_args...);
-    std::pair<std::vector<std::size_t>, std::vector<std::size_t>> row_hashes =
-        _row_transform_ptr->apply(stream_element);
-    std::pair<std::vector<std::size_t>, std::vector<std::size_t>> col_hashes =
-        _col_transform_ptr->apply(stream_element);
+    update_type row_hashes = _row_transform_ptr->apply(stream_element.item);
+    update_type col_hashes =
+        _col_transform_ptr->apply(stream_element.identifier);
     for (int i(0); i < ReplicationCount; ++i) {
       for (int j(0); j < ReplicationCount; ++j) {
         const std::pair<std::uint64_t, std::uint64_t> indices = {
