@@ -146,13 +146,7 @@ class Matrix {
    * @brief Construct a new Matrix container object. Currently assuming that
    * Matrix objects are always square.
    */
-  Matrix() : _registers(RowCount, ColCount) {
-    // As dynamically allocated Eigen::MatrixXx classes have uninitialized
-    // coefficients, it appears that it is necessary to clear the matrices to
-    // avoid accidentally grabbing any prior matching matrices that may have
-    // passed out of scope.
-    clear();
-  }
+  Matrix() : _registers(registers_type::Zero(RowCount, ColCount)) {}
 
   /**
    * @brief Copy constructor.
