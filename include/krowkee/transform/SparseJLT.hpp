@@ -125,6 +125,20 @@ class SparseJLT {
     }
   }
 
+  constexpr std::pair<std::vector<std::size_t>, std::vector<std::size_t>> apply(
+      const Element<register_type> &element) const {
+    std::pair<std::vector<std::size_t>, std::vector<std::size_t>> hashes = {
+        std::vector<std::size_t>(ReplicationCount),
+        std::vector<std::size_t>(ReplicationCount)};
+    for (int i(0); i < ReplicationCount; ++i) {
+      auto [index, polarity] = _hashes[i](element.item);
+      index += i * range_size();
+      hashes.first[i]  = index;
+      hashes.second[i] = polarity;
+    }
+    return hashes;
+  }
+
  public:
   //////////////////////////////////////////////////////////////////////////////
   // Getters

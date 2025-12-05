@@ -39,6 +39,19 @@ struct Parameters {
   bool          verbose;
 };
 
+template <typename... Sketches>
+void sketch_both(Eigen::MatrixXf matrix, Sketches &...sketches) {
+  int i(0);
+  for (const auto &row : matrix.rowwise()) {
+    int j(0);
+    for (const auto &element : row) {
+      (..., (sketches.insert({i, j}, element)));
+      ++j;
+    }
+    ++i;
+  }
+}
+
 /**
  * Verify that initialization and assignment (=) operators work as expected.
  */
@@ -48,6 +61,14 @@ struct init_check {
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
   using make_ptr_type      = MakePtrFunc<transform_type>;
+  using row_transform_type = typename transform_type::row_transform_type;
+  using row_transform_ptr_type =
+      typename transform_type::row_transform_ptr_type;
+  using make_row_ptr_type  = MakePtrFunc<row_transform_type>;
+  using col_transform_type = typename transform_type::col_transform_type;
+  using col_transform_ptr_type =
+      typename transform_type::col_transform_ptr_type;
+  using make_col_ptr_type = MakePtrFunc<col_transform_type>;
 
   std::string name() const {
     std::stringstream ss;
@@ -56,10 +77,18 @@ struct init_check {
   }
 
   void operator()(const Parameters &params) const {
-    make_ptr_type _make_ptr = make_ptr_type();
+    make_ptr_type     _make_ptr     = make_ptr_type();
+    make_row_ptr_type _make_row_ptr = make_row_ptr_type();
+    make_col_ptr_type _make_col_ptr = make_col_ptr_type();
+
+    row_transform_ptr_type row_transform_ptr(_make_row_ptr(0));
+    col_transform_ptr_type col_transform_ptr(_make_col_ptr(1));
+
+    Eigen::MatrixXf matrix = Eigen::MatrixXf::Random(16, 16);
     {
-      transform_ptr_type transform_ptr(_make_ptr(0, 1));
-      sketch_type        sketch(transform_ptr);
+      transform_ptr_type transform_ptr(
+          _make_ptr(row_transform_ptr, col_transform_ptr));
+      sketch_type sketch(transform_ptr);
 
       bool init_empty = sketch.empty();
 
@@ -77,53 +106,42 @@ struct init_check {
       CHECK_CONDITION(clear_empty == true, "post-clear empty");
     }
     {
-      transform_ptr_type transform_ptr_1(_make_ptr(0, 1));
-      transform_ptr_type transform_ptr_2(_make_ptr(0, 1));
-      sketch_type        sketch_1(transform_ptr_1);
-      sketch_type        sketch_2(transform_ptr_2);
-      for (int i(0); i < 1000; i++) {
-        for (int j(0); j < 1000; j++) {
-          sketch_1.insert({i, j});
-          sketch_2.insert({i, j});
-        }
-      }
+      transform_ptr_type transform_ptr_1(
+          _make_ptr(row_transform_ptr, col_transform_ptr));
+      transform_ptr_type transform_ptr_2(
+          _make_ptr(row_transform_ptr, col_transform_ptr));
+      sketch_type sketch_1(transform_ptr_1);
+      sketch_type sketch_2(transform_ptr_2);
+
+      sketch_both(matrix, sketch_1, sketch_2);
+
       bool constructors_match = sketch_1 == sketch_2;
       if (constructors_match == false) {
-        std::cout << "sketch_1 : " << sketch_1 << std::endl << std::endl;
-        std::cout << "sketch_2 : " << sketch_2 << std::endl;
+        std::cout << "sketch_1:" << std::endl
+                  << sketch_1 << std::endl
+                  << std::endl;
+        std::cout << "sketch_2:" << std::endl << sketch_2 << std::endl;
       }
       CHECK_CONDITION(constructors_match == true,
                       "constructor/insert consistency");
-    }
-    {
-      transform_ptr_type transform_ptr(_make_ptr(0, 1));
-      sketch_type        sketch(transform_ptr);
-      for (int i(0); i < 1000; ++i) {
-        for (int j(0); j < 1000; ++j) {
-          sketch.insert({i, j});
-        }
-      }
-      sketch_type sketch2(sketch);
-      bool        copy_matches = sketch == sketch2;
+
+      sketch_type sketch_3(sketch_1);
+      bool        copy_matches = sketch_1 == sketch_3;
       if (copy_matches == false) {
-        std::cout << "sketch : " << sketch << std::endl;
-        std::cout << "sketch2 : " << sketch2 << std::endl;
+        std::cout << "sketch_1:" << std::endl
+                  << sketch_1 << std::endl
+                  << std::endl;
+        std::cout << "sketch_3:" << std::endl << sketch_3 << std::endl;
       }
       CHECK_CONDITION(copy_matches == true, "copy constructor");
-    }
-    {
-      transform_ptr_type transform_ptr(_make_ptr(0, 1));
-      sketch_type        sketch(transform_ptr);
-      for (int i(0); i < 1000; ++i) {
-        for (int j(0); j < 1000; ++j) {
-          sketch.insert({i, j});
-        }
-      }
-      sketch_type sketch2      = sketch;
-      bool        swap_matches = sketch == sketch2;
+
+      sketch_type sketch_4     = sketch_1;
+      bool        swap_matches = sketch_1 == sketch_4;
       if (swap_matches == false) {
-        std::cout << "sketch : " << sketch << std::endl;
-        std::cout << "sketch2 : " << sketch2 << std::endl;
+        std::cout << "sketch1:" << std::endl
+                  << sketch_1 << std::endl
+                  << std::endl;
+        std::cout << "sketch3:" << std::endl << sketch_4 << std::endl;
       }
       CHECK_CONDITION(swap_matches, "copy-and-swap assignment");
     }
@@ -149,6 +167,14 @@ struct bad_merge_check {
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
   using make_ptr_type      = MakePtrFunc<transform_type>;
+  using row_transform_type = typename transform_type::row_transform_type;
+  using row_transform_ptr_type =
+      typename transform_type::row_transform_ptr_type;
+  using make_row_ptr_type  = MakePtrFunc<row_transform_type>;
+  using col_transform_type = typename transform_type::col_transform_type;
+  using col_transform_ptr_type =
+      typename transform_type::col_transform_ptr_type;
+  using make_col_ptr_type = MakePtrFunc<col_transform_type>;
 
   constexpr std::string name() const {
     std::stringstream ss;
@@ -157,11 +183,21 @@ struct bad_merge_check {
   }
 
   void operator()(const Parameters &params) const {
-    make_ptr_type      _make_ptr = make_ptr_type();
-    transform_ptr_type transform_ptr_1(_make_ptr(32, 1));
-    transform_ptr_type transform_ptr_2(_make_ptr(22, 2));
-    sketch_type        sketch_1(transform_ptr_1);
-    sketch_type        sketch_2(transform_ptr_2);
+    make_ptr_type     _make_ptr     = make_ptr_type();
+    make_row_ptr_type _make_row_ptr = make_row_ptr_type();
+    make_col_ptr_type _make_col_ptr = make_col_ptr_type();
+
+    row_transform_ptr_type row_transform_ptr_1(_make_row_ptr(32));
+    col_transform_ptr_type col_transform_ptr_1(_make_col_ptr(1));
+    row_transform_ptr_type row_transform_ptr_2(_make_row_ptr(22));
+    col_transform_ptr_type col_transform_ptr_2(_make_col_ptr(2));
+
+    transform_ptr_type transform_ptr_1(
+        _make_ptr(row_transform_ptr_1, col_transform_ptr_1));
+    transform_ptr_type transform_ptr_2(
+        _make_ptr(row_transform_ptr_2, col_transform_ptr_2));
+    sketch_type sketch_1(transform_ptr_1);
+    sketch_type sketch_2(transform_ptr_2);
     CHECK_THROWS<std::invalid_argument>(
         check_throws_bad_plus_equals<SketchType>,
         "bad merge (+=) with different functor seeds", sketch_1, sketch_2);
@@ -170,19 +206,6 @@ struct bad_merge_check {
         "bad merge (+) with different functor seeds", sketch_1, sketch_2);
   }
 };
-
-template <typename... Sketches>
-void sketch_both(Eigen::MatrixXf matrix, Sketches &...sketches) {
-  int i(0);
-  for (const auto &row : matrix.rowwise()) {
-    int j(0);
-    for (const auto &element : row) {
-      (..., (sketches.insert({i, j}, element)));
-      ++j;
-    }
-    ++i;
-  }
-}
 
 /**
  * Verify that merge (+/+=) operators work as expected.
@@ -193,6 +216,14 @@ struct good_merge_check {
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
   using make_ptr_type      = MakePtrFunc<transform_type>;
+  using row_transform_type = typename transform_type::row_transform_type;
+  using row_transform_ptr_type =
+      typename transform_type::row_transform_ptr_type;
+  using make_row_ptr_type  = MakePtrFunc<row_transform_type>;
+  using col_transform_type = typename transform_type::col_transform_type;
+  using col_transform_ptr_type =
+      typename transform_type::col_transform_ptr_type;
+  using make_col_ptr_type = MakePtrFunc<col_transform_type>;
 
   constexpr std::string name() const {
     std::stringstream ss;
@@ -201,13 +232,20 @@ struct good_merge_check {
   }
 
   void operator()(const Parameters &params) const {
-    make_ptr_type      _make_ptr = make_ptr_type();
-    transform_ptr_type transform_ptr(_make_ptr(8, 1));
-    sketch_type        sketch_A(transform_ptr);
-    sketch_type        sketch_B(transform_ptr);
-    sketch_type        sketch_C(transform_ptr);
-    sketch_type        sketch_AB(transform_ptr);
-    sketch_type        sketch_ABC(transform_ptr);
+    make_ptr_type     _make_ptr     = make_ptr_type();
+    make_row_ptr_type _make_row_ptr = make_row_ptr_type();
+    make_col_ptr_type _make_col_ptr = make_col_ptr_type();
+
+    row_transform_ptr_type row_transform_ptr(_make_row_ptr(params.seed));
+    col_transform_ptr_type col_transform_ptr(_make_col_ptr(params.seed + 1));
+    transform_ptr_type     transform_ptr(
+        _make_ptr(row_transform_ptr, col_transform_ptr));
+
+    sketch_type sketch_A(transform_ptr);
+    sketch_type sketch_B(transform_ptr);
+    sketch_type sketch_C(transform_ptr);
+    sketch_type sketch_AB(transform_ptr);
+    sketch_type sketch_ABC(transform_ptr);
 
     Eigen::MatrixXf matrix_A = Eigen::MatrixXf::Random(128, 128);
     Eigen::MatrixXf matrix_B = Eigen::MatrixXf::Random(128, 128);
@@ -266,6 +304,14 @@ struct serialize_check {
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
   using make_ptr_type      = MakePtrFunc<transform_type>;
+  using row_transform_type = typename transform_type::row_transform_type;
+  using row_transform_ptr_type =
+      typename transform_type::row_transform_ptr_type;
+  using make_row_ptr_type  = MakePtrFunc<row_transform_type>;
+  using col_transform_type = typename transform_type::col_transform_type;
+  using col_transform_ptr_type =
+      typename transform_type::col_transform_ptr_type;
+  using make_col_ptr_type = MakePtrFunc<col_transform_type>;
 
   constexpr std::string name() const {
     std::stringstream ss;
@@ -274,15 +320,20 @@ struct serialize_check {
   }
 
   void operator()(const Parameters &params) const {
-    make_ptr_type      _make_ptr{};
-    transform_ptr_type transform_ptr(_make_ptr(params.seed, params.seed + 1));
+    make_ptr_type     _make_ptr     = make_ptr_type();
+    make_row_ptr_type _make_row_ptr = make_row_ptr_type();
+    make_col_ptr_type _make_col_ptr = make_col_ptr_type();
+
+    row_transform_ptr_type row_transform_ptr(_make_row_ptr(params.seed));
+    col_transform_ptr_type col_transform_ptr(_make_col_ptr(params.seed + 1));
+    transform_ptr_type     transform_ptr(
+        _make_ptr(row_transform_ptr, col_transform_ptr));
 
     CHECK_ALL_ARCHIVES(*transform_ptr, "sketch functor");
 
-    sketch_type sketch(transform_ptr);
-    for (std::uint64_t i(0); i < params.count; sketch.insert(i++)) {
-    }
-    sketch.compactify();
+    Eigen::MatrixXf matrix = Eigen::MatrixXf::Random(128, 128);
+    sketch_type     sketch(transform_ptr);
+    sketch_both(matrix, sketch);
 
     CHECK_ALL_ARCHIVES(sketch.container(), "sketch container");
     CHECK_ALL_ARCHIVES(sketch, "whole sketch object");
@@ -296,6 +347,14 @@ struct ingest_check {
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
   using make_ptr_type      = MakePtrFunc<transform_type>;
+  using row_transform_type = typename transform_type::row_transform_type;
+  using row_transform_ptr_type =
+      typename transform_type::row_transform_ptr_type;
+  using make_row_ptr_type  = MakePtrFunc<row_transform_type>;
+  using col_transform_type = typename transform_type::col_transform_type;
+  using col_transform_ptr_type =
+      typename transform_type::col_transform_ptr_type;
+  using make_col_ptr_type = MakePtrFunc<col_transform_type>;
 
   constexpr std::string name() const {
     std::stringstream ss;
@@ -303,32 +362,13 @@ struct ingest_check {
     return ss.str();
   }
 
-  std::vector<std::vector<std::uint64_t>> get_uniform_matrix(
-      const Parameters &params) const {
-    std::mt19937                                 gen(params.seed);
-    std::uniform_int_distribution<std::uint64_t> dist(0,
-                                                      params.domain_size - 1);
-
-    std::vector<std::vector<std::uint64_t>> matrix(
-        params.count, std::vector<std::uint64_t>(params.count));
-
-    for (std::int64_t i(0); i < params.count; ++i) {
-      for (std::int64_t j(0); j < params.count; ++j) {
-        matrix[i][j] = dist(gen);
-      }
-    }
-    return matrix;
-  }
-
   void rel_mag_test(const transform_ptr_type &transform_ptr,
                     const Parameters         &params) const {
-    sketch_type sketch(transform_ptr);
-    for (std::uint64_t i(0); i < 1000; ++i) {
-      for (std::uint64_t j(0); j < 1000; ++j) {
-        sketch.insert({i, j});
-      }
-    }
-    sketch.compactify();
+    sketch_type     sketch(transform_ptr);
+    Eigen::MatrixXf matrix = Eigen::MatrixXf::Random(128, 128);
+
+    sketch_both(matrix, sketch);
+
     int    sum(accumulate(sketch, 0.0));
     double rel_mag((double)sum / (1000 * 1000 * params.range_size *
                                   params.replication_count));
@@ -341,48 +381,65 @@ struct ingest_check {
   }
 
   void operator()(const Parameters &params) const {
-    make_ptr_type      _make_ptr{};
-    transform_ptr_type transform_ptr(_make_ptr(params.seed, params.seed + 1));
-    transform_ptr_type rhs_ptr(_make_ptr(params.seed + 1, params.seed + 2));
+    make_ptr_type     _make_ptr     = make_ptr_type();
+    make_row_ptr_type _make_row_ptr = make_row_ptr_type();
+    make_col_ptr_type _make_col_ptr = make_col_ptr_type();
+
+    row_transform_ptr_type row_transform_ptr(_make_row_ptr(params.seed));
+    col_transform_ptr_type col_transform_ptr(_make_col_ptr(params.seed + 1));
+    transform_ptr_type     transform_ptr(
+        _make_ptr(row_transform_ptr, col_transform_ptr));
+
     rel_mag_test(transform_ptr, params);
     // lemma_check(lhs_ptr, rhs_prt, params);
   }
 };
 
-template <typename SketchType, template <typename> class MakePtrFunc>
-struct spot_check {
-  using sketch_type        = SketchType;
-  using transform_type     = typename sketch_type::transform_type;
-  using transform_ptr_type = typename sketch_type::transform_ptr_type;
-  using make_ptr_type      = MakePtrFunc<transform_type>;
+// template <typename SketchType, template <typename> class MakePtrFunc>
+// struct spot_check {
+//   using sketch_type        = SketchType;
+//   using transform_type     = typename sketch_type::transform_type;
+//   using transform_ptr_type = typename sketch_type::transform_ptr_type;
+//   using make_ptr_type      = MakePtrFunc<transform_type>;
+//   using row_transform_type = typename transform_type::row_transform_type;
+//   using row_transform_ptr_type =
+//       typename transform_type::row_transform_ptr_type;
+//   using make_row_ptr_type  = MakePtrFunc<row_transform_type>;
+//   using col_transform_type = typename transform_type::col_transform_type;
+//   using col_transform_ptr_type =
+//       typename transform_type::col_transform_ptr_type;
+//   using make_col_ptr_type = MakePtrFunc<col_transform_type>;
+//   using col_sketch_type = dense::SparseJLT
 
-  constexpr std::string name() const {
-    std::stringstream ss;
-    ss << transform_type::name() << " spot check";
-    return ss.str();
-  }
+//   constexpr std::string name() const {
+//     std::stringstream ss;
+//     ss << transform_type::name() << " spot check";
+//     return ss.str();
+//   }
 
-  void operator()(const Parameters &params) const {
-    using embedding_type      = dense::SparseJLT<sketch_type::range_size(),
-                                                 sketch_type::replication_count()>;
-    using embedding_tptr_type = typename embedding_type::transform_ptr_type;
+//   void operator()(const Parameters &params) const {
+//     make_ptr_type     _make_ptr     = make_ptr_type();
+//     make_row_ptr_type _make_row_ptr = make_row_ptr_type();
+//     make_col_ptr_type _make_col_ptr = make_col_ptr_type();
 
-    make_ptr_type      _make_ptr = make_ptr_type();
-    transform_ptr_type transform_ptr(_make_ptr(params.seed, params.seed + 54));
-    sketch_type        first(transform_ptr);
-    sketch_type        second(transform_ptr);
-    sketch_type        both(transform_ptr);
-    Eigen::MatrixXf    matrix_A = Eigen::MatrixXf::Random(128, 128);
-  }
-};
+//     row_transform_ptr_type row_transform_ptr(_make_row_ptr(params.seed));
+//     col_transform_ptr_type col_transform_ptr(_make_col_ptr(params.seed + 1));
+//     transform_ptr_type     transform_ptr(
+//         _make_ptr(row_transform_ptr, col_transform_ptr));
+
+//     sketch_type     first(transform_ptr);
+//     sketch_type     second(transform_ptr);
+//     sketch_type     both(transform_ptr);
+//     Eigen::MatrixXf matrix = Eigen::MatrixXf::Random(128, 128);
+//   }
+// };
 
 /**
  * Execute the batter of tests for the given sketch functor.
  */
 template <typename SketchType, template <typename> class MakePtrFunc>
 void perform_tests(const Parameters &params) {
-  using sketch_type    = SketchType;
-  using transform_type = typename sketch_type::transform_type;
+  using sketch_type = SketchType;
 
   MakePtrFunc<std::int32_t> mpf;
 
