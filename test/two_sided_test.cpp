@@ -52,6 +52,71 @@ void sketch_both(Eigen::MatrixXf matrix, Sketches &...sketches) {
   }
 }
 
+template <typename MatrixType, typename TransformPtrType>
+constexpr MatrixType sketch_cols(const MatrixType       &matrix,
+                                 const TransformPtrType &transform_ptr) {
+  MatrixType sketch_matrix(
+      static_cast<std::size_t>(matrix.rows()),
+      transform_ptr->range_size() * transform_ptr->replication_count());
+  // required to initialize matrix coeffs
+  sketch_matrix.setZero(
+      static_cast<std::size_t>(matrix.rows()),
+      transform_ptr->range_size() * transform_ptr->replication_count());
+
+  int i(0);
+  for (const auto &row : matrix.rowwise()) {
+    int j(0);
+    for (const auto &element : row) {
+      auto hashes = transform_ptr->apply(j);
+      for (int k(0); k < hashes.first.size(); ++k) {
+        auto idx      = hashes.first[k];
+        auto polarity = hashes.second[k];
+        // if (matrix(i, j) != 0.0) {
+        //   std::cout << "row sketch applying " << polarity << " to (" << i <<
+        //   ","
+        //             << idx << ") with insert " << j << std::endl;
+        // }
+        sketch_matrix(i, idx) += polarity * matrix(i, j);
+      }
+      ++j;
+    }
+    ++i;
+  }
+  return sketch_matrix;
+}
+
+template <typename MatrixType, typename TransformPtrType>
+constexpr MatrixType sketch_rows(const MatrixType       &matrix,
+                                 const TransformPtrType &transform_ptr) {
+  MatrixType sketch_matrix(
+      transform_ptr->range_size() * transform_ptr->replication_count(),
+      static_cast<std::size_t>(matrix.cols()));
+  // required to initialize matrix coeffs
+  sketch_matrix.setZero(
+      transform_ptr->range_size() * transform_ptr->replication_count(),
+      static_cast<std::size_t>(matrix.cols()));
+
+  int j(0);
+  for (const auto &col : matrix.colwise()) {
+    int i(0);
+    for (const auto &element : col) {
+      auto hashes = transform_ptr->apply(i);
+      for (int k(0); k < hashes.first.size(); ++k) {
+        auto idx      = hashes.first[k];
+        auto polarity = hashes.second[k];
+        // if (matrix(i, j) != 0.0) {
+        //   std::cout << "col sketch applying " << polarity << " to (" << idx
+        //             << "," << j << ") with insert " << i << std::endl;
+        // }
+        sketch_matrix(idx, j) += polarity * matrix(i, j);
+      }
+      ++i;
+    }
+    ++j;
+  }
+  return sketch_matrix;
+}
+
 /**
  * Verify that initialization and assignment (=) operators work as expected.
  */
@@ -466,7 +531,6 @@ struct spot_check {
       }
       CHECK_CONDITION(is_empty == true, "sketch is initialized empty");
 
-      // sketch.clear();
       sketch.insert(indices);
       update_type       row_hashes = row_transform_ptr->apply(indices.first);
       update_type       col_hashes = col_transform_ptr->apply(indices.second);
@@ -503,9 +567,75 @@ struct spot_check {
         }
       }
       CHECK_CONDITION(correct_updates == true, "single update matches");
+      {
+        Eigen::MatrixXf matrix_A                = Eigen::MatrixXf::Zero(64, 64);
+        matrix_A(indices.first, indices.second) = 1;
+        Eigen::MatrixXf matrix_AR   = sketch_cols(matrix_A, col_transform_ptr);
+        Eigen::MatrixXf matrix_STAR = sketch_rows(matrix_AR, row_transform_ptr);
+
+        bool allclose = krowkee::sketch::detail::allclose(
+            matrix_STAR, sketch.container().get_registers());
+        std::size_t size = matrix_STAR.size();
+        if (allclose == false) {
+          std::cout << "fails with mean absolute error "
+                    << krowkee::sketch::detail::mean_absolute_error(
+                           matrix_STAR, sketch.container().get_registers())
+                    << std::endl;
+          std::cout << ss.str() << std::endl;
+          if (size <= 256) {
+            std::cout << "matrix_STAR:" << std::endl
+                      << matrix_STAR << std::endl
+                      << std::endl;
+            std::cout << "sketch:" << std::endl
+                      << sketch << std::endl
+                      << std::endl;
+          }
+        }
+        CHECK_CONDITION(allclose == true,
+                        "single update matches dense version");
+      }
     }
     {
-      // Eigen::MatrixXf matrix = Eigen::MatrixXf::Random(128, 128);
+      Eigen::MatrixXf matrix_A  = Eigen::MatrixXf::Random(64, 64);
+      Eigen::MatrixXf matrix_AR = sketch_cols(matrix_A, col_transform_ptr);
+      // std::cout << "matrix_AR" << std::endl
+      //           << matrix_AR << std::endl
+      //           << std::endl;
+      Eigen::MatrixXf matrix_STAR = sketch_rows(matrix_AR, row_transform_ptr);
+      Eigen::MatrixXf matrix_STA  = sketch_rows(matrix_A, row_transform_ptr);
+      // std::cout << "matrix_STA" << std::endl
+      //           << matrix_STA << std::endl
+      //           << std::endl;
+      Eigen::MatrixXf matrix_STAR2 = sketch_cols(matrix_STA, col_transform_ptr);
+      // std::cout << "matrix_STAR2" << std::endl
+      //           << matrix_STAR2 << std::endl
+      //           << std::endl;
+
+      sketch_type sketch(transform_ptr);
+      sketch_both(matrix_A, sketch);
+
+      bool dense_allclose =
+          krowkee::sketch::detail::allclose(matrix_STAR, matrix_STAR2);
+      CHECK_CONDITION(dense_allclose == true, "both dense version match");
+
+      bool allclose = krowkee::sketch::detail::allclose(
+          matrix_STAR, sketch.container().get_registers());
+      std::size_t size = matrix_STAR.size();
+      if (allclose == false) {
+        std::cout << "fails with mean absolute error "
+                  << krowkee::sketch::detail::mean_absolute_error(
+                         matrix_STAR, sketch.container().get_registers())
+                  << std::endl;
+        if (size <= 256) {
+          std::cout << "matrix_STAR:" << std::endl
+                    << matrix_STAR << std::endl
+                    << std::endl;
+          std::cout << "sketch:" << std::endl
+                    << sketch << std::endl
+                    << std::endl;
+        }
+      }
+      CHECK_CONDITION(allclose == true, "macro transform composition matches");
     }
   }
 };
