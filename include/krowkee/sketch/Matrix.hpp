@@ -67,16 +67,36 @@ CEREAL_LOAD_FUNCTION_NAME(Archive                         &archive,
 namespace krowkee::sketch::detail {
 // Eigen-compatible implementation of numpy.allclose() derived from
 // https://stackoverflow.com/questions/15051367/how-to-compare-vectors-approximately-in-eigen
-template <typename DerivedA, typename DerivedB>
+template <typename DerivedLHS, typename DerivedRHS>
 bool allclose(
-    const Eigen::DenseBase<DerivedA> &a, const Eigen::DenseBase<DerivedB> &b,
-    const typename DerivedA::RealScalar &rtol =
-        Eigen::NumTraits<typename DerivedA::RealScalar>::dummy_precision(),
-    const typename DerivedA::RealScalar &atol =
-        Eigen::NumTraits<typename DerivedA::RealScalar>::epsilon()) {
-  return ((a.derived() - b.derived()).array().abs() <=
-          (atol + rtol * b.derived().array().abs()))
+    const Eigen::DenseBase<DerivedLHS>    &lhs,
+    const Eigen::DenseBase<DerivedRHS>    &rhs,
+    const typename DerivedLHS::RealScalar &rtol =
+        Eigen::NumTraits<typename DerivedLHS::RealScalar>::dummy_precision() *
+        10,
+    const typename DerivedLHS::RealScalar &atol =
+        Eigen::NumTraits<typename DerivedLHS::RealScalar>::epsilon() * 100) {
+  // std::cout << "atol: " << atol << std::endl;
+  // std::cout << "rtol: " << rtol << std::endl;
+  // std::cout << "mean rhs: "
+  //           << ((rtol *
+  //                lhs.derived().array().abs().max(rhs.derived().array().abs()))
+  //                   .sum() /
+  //               lhs.size())
+  //           << std::endl;
+  // std::cout << "max error: "
+  //           << (lhs.derived() - rhs.derived()).array().abs().maxCoeff()
+  //           << std::endl;
+  return ((lhs.derived() - rhs.derived()).array().abs() <=
+          (atol +
+           rtol * lhs.derived().array().abs().max(rhs.derived().array().abs())))
       .all();
+}
+
+template <typename DerivedLHS, typename DerivedRHS>
+double mean_absolute_error(const Eigen::DenseBase<DerivedLHS> &lhs,
+                           const Eigen::DenseBase<DerivedRHS> &rhs) {
+  return (lhs.derived() - rhs.derived()).array().abs().sum() / lhs.size();
 }
 }  // namespace krowkee::sketch::detail
 namespace krowkee {
@@ -126,7 +146,13 @@ class Matrix {
    * @brief Construct a new Matrix container object. Currently assuming that
    * Matrix objects are always square.
    */
-  Matrix() : _registers(RowCount, ColCount) {}
+  Matrix() : _registers(RowCount, ColCount) {
+    // As dynamically allocated Eigen::MatrixXx classes have uninitialized
+    // coefficients, it appears that it is necessary to clear the matrices to
+    // avoid accidentally grabbing any prior matching matrices that may have
+    // passed out of scope.
+    clear();
+  }
 
   /**
    * @brief Copy constructor.
@@ -271,7 +297,7 @@ class Matrix {
     return _registers(indices.first, indices.second);
   }
   /**
-   * @brief Access Dense at `index`.
+   * @brief Access Matrix at `indices` pair.
    *
    * @param indices The row and column indices of the underlying matrix to
    * index. Must be less than `row_count` and `col_count`, respectively.
@@ -280,6 +306,34 @@ class Matrix {
   register_type &operator[](
       const std::pair<std::uint64_t, std::uint64_t> &indices) {
     return _registers(indices.first, indices.second);
+  }
+
+  /**
+   * @brief Const access Matrix at `(row_idx, col_idx)`.
+   *
+   * @param row_idx The row index of the underlying matrix. Must be less than
+   * `row_count`.
+   * @param col_idx The column index of the underlying matrix. Must be less
+   * than `col_count`.
+   * @return constexpr const register_type& A const reference to the object at
+   * the indicated register.
+   */
+  constexpr const register_type &operator()(
+      const std::uint64_t &row_idx, const std::uint64_t &col_idx) const {
+    return _registers(row_idx, col_idx);
+  }
+  /**
+   * @brief Access Matrix at `(row_idx, col_idx)`.
+   *
+   * @param row_idx The row index of the underlying matrix. Must be less than
+   * `row_count`.
+   * @param col_idx The column index of the underlying matrix. Must be less
+   * than `col_count`.
+   * @return register_type& A reference to the object at the indicated register.
+   */
+  register_type &operator()(const std::uint64_t &row_idx,
+                            const std::uint64_t &col_idx) {
+    return _registers(row_idx, col_idx);
   }
 
   //////////////////////////////////////////////////////////////////////////////

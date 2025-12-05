@@ -255,16 +255,24 @@ struct good_merge_check {
     sketch_both(matrix_B, sketch_B, sketch_AB, sketch_ABC);
     sketch_both(matrix_C, sketch_C, sketch_ABC);
 
+    std::size_t size = sketch_A.container().get_registers().size();
     {
       sketch_type merge_AB      = (sketch_A + sketch_B);
       bool        merge_success = merge_AB == sketch_AB;
       if (merge_success == false) {
-        std::cout << "merge_AB:" << std::endl
-                  << merge_AB << std::endl
+        std::cout << "fails with mean absolute error "
+                  << krowkee::sketch::detail::mean_absolute_error(
+                         merge_AB.container().get_registers(),
+                         sketch_AB.container().get_registers())
                   << std::endl;
-        std::cout << "sketch_AB:" << std::endl
-                  << sketch_AB << std::endl
-                  << std::endl;
+        if (size <= 256) {
+          std::cout << "merge_AB:" << std::endl
+                    << merge_AB << std::endl
+                    << std::endl;
+          std::cout << "sketch_AB:" << std::endl
+                    << sketch_AB << std::endl
+                    << std::endl;
+        }
       }
       CHECK_CONDITION(merge_success == true, "merge (+)");
     }
@@ -272,12 +280,19 @@ struct good_merge_check {
       sketch_type merge_ABC          = (sketch_A + sketch_B + sketch_C);
       bool        multimerge_success = merge_ABC == sketch_ABC;
       if (multimerge_success == false) {
-        std::cout << "merge_ABC:" << std::endl
-                  << merge_ABC << std::endl
+        std::cout << "fails with mean absolute error "
+                  << krowkee::sketch::detail::mean_absolute_error(
+                         merge_ABC.container().get_registers(),
+                         sketch_ABC.container().get_registers())
                   << std::endl;
-        std::cout << "sketch_ABC:" << std::endl
-                  << sketch_ABC << std::endl
-                  << std::endl;
+        if (size <= 256) {
+          std::cout << "merge_ABC:" << std::endl
+                    << merge_ABC << std::endl
+                    << std::endl;
+          std::cout << "sketch_ABC:" << std::endl
+                    << sketch_ABC << std::endl
+                    << std::endl;
+        }
       }
       CHECK_CONDITION(multimerge_success == true, "multi-merge (+, +)");
     }
@@ -285,12 +300,19 @@ struct good_merge_check {
       sketch_A += sketch_B;
       bool inplace_merge_success = sketch_A == sketch_AB;
       if (inplace_merge_success == false) {
-        std::cout << "sketch_A:" << std::endl
-                  << sketch_A << std::endl
+        std::cout << "fails with mean absolute error "
+                  << krowkee::sketch::detail::mean_absolute_error(
+                         sketch_A.container().get_registers(),
+                         sketch_AB.container().get_registers())
                   << std::endl;
-        std::cout << "sketch_AB:" << std::endl
-                  << sketch_AB << std::endl
-                  << std::endl;
+        if (size <= 256) {
+          std::cout << "sketch_A:" << std::endl
+                    << sketch_A << std::endl
+                    << std::endl;
+          std::cout << "sketch_AB:" << std::endl
+                    << sketch_AB << std::endl
+                    << std::endl;
+        }
       }
       CHECK_CONDITION(inplace_merge_success == true, "merge (+)");
     }
@@ -395,44 +417,98 @@ struct ingest_check {
   }
 };
 
-// template <typename SketchType, template <typename> class MakePtrFunc>
-// struct spot_check {
-//   using sketch_type        = SketchType;
-//   using transform_type     = typename sketch_type::transform_type;
-//   using transform_ptr_type = typename sketch_type::transform_ptr_type;
-//   using make_ptr_type      = MakePtrFunc<transform_type>;
-//   using row_transform_type = typename transform_type::row_transform_type;
-//   using row_transform_ptr_type =
-//       typename transform_type::row_transform_ptr_type;
-//   using make_row_ptr_type  = MakePtrFunc<row_transform_type>;
-//   using col_transform_type = typename transform_type::col_transform_type;
-//   using col_transform_ptr_type =
-//       typename transform_type::col_transform_ptr_type;
-//   using make_col_ptr_type = MakePtrFunc<col_transform_type>;
-//   using col_sketch_type = dense::SparseJLT
+template <typename SketchType, template <typename> class MakePtrFunc>
+struct spot_check {
+  using sketch_type        = SketchType;
+  using transform_type     = typename sketch_type::transform_type;
+  using transform_ptr_type = typename sketch_type::transform_ptr_type;
+  using make_ptr_type      = MakePtrFunc<transform_type>;
+  using row_transform_type = typename transform_type::row_transform_type;
+  using row_transform_ptr_type =
+      typename transform_type::row_transform_ptr_type;
+  using make_row_ptr_type  = MakePtrFunc<row_transform_type>;
+  using col_transform_type = typename transform_type::col_transform_type;
+  using col_transform_ptr_type =
+      typename transform_type::col_transform_ptr_type;
+  using make_col_ptr_type = MakePtrFunc<col_transform_type>;
+  using update_type       = typename row_transform_type::update_type;
 
-//   constexpr std::string name() const {
-//     std::stringstream ss;
-//     ss << transform_type::name() << " spot check";
-//     return ss.str();
-//   }
+  constexpr std::string name() const {
+    std::stringstream ss;
+    ss << transform_type::name() << " spot check";
+    return ss.str();
+  }
 
-//   void operator()(const Parameters &params) const {
-//     make_ptr_type     _make_ptr     = make_ptr_type();
-//     make_row_ptr_type _make_row_ptr = make_row_ptr_type();
-//     make_col_ptr_type _make_col_ptr = make_col_ptr_type();
+  void operator()(const Parameters &params) const {
+    make_ptr_type     _make_ptr     = make_ptr_type();
+    make_row_ptr_type _make_row_ptr = make_row_ptr_type();
+    make_col_ptr_type _make_col_ptr = make_col_ptr_type();
 
-//     row_transform_ptr_type row_transform_ptr(_make_row_ptr(params.seed));
-//     col_transform_ptr_type col_transform_ptr(_make_col_ptr(params.seed + 1));
-//     transform_ptr_type     transform_ptr(
-//         _make_ptr(row_transform_ptr, col_transform_ptr));
+    row_transform_ptr_type row_transform_ptr(_make_row_ptr(params.seed));
+    col_transform_ptr_type col_transform_ptr(_make_col_ptr(params.seed + 1));
+    transform_ptr_type     transform_ptr(
+        _make_ptr(row_transform_ptr, col_transform_ptr));
 
-//     sketch_type     first(transform_ptr);
-//     sketch_type     second(transform_ptr);
-//     sketch_type     both(transform_ptr);
-//     Eigen::MatrixXf matrix = Eigen::MatrixXf::Random(128, 128);
-//   }
-// };
+    {
+      std::pair<std::uint64_t, std::uint64_t> indices{40, 22};
+      krowkee::stream::Element<register_type> element(indices);
+      CHECK_CONDITION(indices.first == element.item,
+                      "stream element gets row idx");
+      CHECK_CONDITION(indices.second == element.identifier,
+                      "stream element gets col idx");
+
+      sketch_type sketch(transform_ptr);
+      bool        is_empty = sketch.empty();
+      if (is_empty == false) {
+        std::cout << "sketch:" << std::endl
+                  << sketch.container() << std::endl
+                  << std::endl;
+      }
+      CHECK_CONDITION(is_empty == true, "sketch is initialized empty");
+
+      // sketch.clear();
+      sketch.insert(indices);
+      update_type       row_hashes = row_transform_ptr->apply(indices.first);
+      update_type       col_hashes = col_transform_ptr->apply(indices.second);
+      bool              correct_updates(true);
+      std::stringstream ss;
+      ss << "updates: ";
+      std::stringstream fail_ss;
+      for (int i(0); i < row_hashes.first.size(); ++i) {
+        ss << "(" << row_hashes.first[i] << "," << col_hashes.first[i]
+           << ") <- " << "(" << row_hashes.second[i] << ","
+           << col_hashes.second[i] << "), ";
+        for (int j(0); j < col_hashes.first.size(); ++j) {
+          const auto row_idx      = row_hashes.first[i];
+          const auto col_idx      = col_hashes.first[j];
+          const auto row_polarity = row_hashes.second[i];
+          const auto col_polarity = col_hashes.second[j];
+          auto       sketch_val(sketch.container()(row_idx, col_idx));
+          auto       explicit_val(row_polarity * col_polarity);
+          if (sketch_val != explicit_val) {
+            correct_updates = false;
+            fail_ss << "failed on (" << row_idx << "," << col_idx << "), "
+                    << sketch_val << " != " << explicit_val << std::endl;
+          };
+        }
+      }
+      ss << std::endl;
+      if (correct_updates == false) {
+        std::cout << fail_ss.str();
+        std::cout << ss.str() << std::endl;
+        if (sketch.container().get_registers().size() <= 256) {
+          std::cout << "sketch:" << std::endl
+                    << sketch.container() << std::endl
+                    << std::endl;
+        }
+      }
+      CHECK_CONDITION(correct_updates == true, "single update matches");
+    }
+    {
+      // Eigen::MatrixXf matrix = Eigen::MatrixXf::Random(128, 128);
+    }
+  }
+};
 
 /**
  * Execute the batter of tests for the given sketch functor.
@@ -453,7 +529,7 @@ void perform_tests(const Parameters &params) {
   std::cout << std::endl << std::endl;
 
   do_test<init_check<sketch_type, MakePtrFunc>>(params);
-  // do_test<spot_check<sketch_type, MakePtrFunc>>(params);
+  do_test<spot_check<sketch_type, MakePtrFunc>>(params);
   do_test<bad_merge_check<sketch_type, MakePtrFunc>>(params);
   do_test<good_merge_check<sketch_type, MakePtrFunc>>(params);
   do_test<ingest_check<sketch_type, MakePtrFunc>>(params);
