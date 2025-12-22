@@ -467,6 +467,65 @@ struct ingest_check {
     CHECK_CONDITION(rel_mag < 0.1, "register sum relative magnitude near zero");
   }
 
+  double multiplicative_error(const double dist_dense,
+                              const double dist_sketch) const {
+    return std::abs(1 - dist_sketch / dist_dense);
+  }
+
+  bool in_bounds(const double dist_dense, const double dist_sketch,
+                 const double epsilon) const {
+    return (dist_sketch < (1 + epsilon) * dist_dense) &&
+           (dist_sketch > (1 - epsilon) * dist_dense);
+  }
+
+  void amm_test(const row_transform_ptr_type &transform_ptr,
+                const Parameters             &params) const {
+    const int row_count = 16;
+    const int col_count = 512;
+
+    double success_rate(0.0);
+    double empirical_epsilon(0.0);
+    double expected_epsilon =
+        std::sqrt(16 * std::log(params.observation_count) /
+                  (params.range_size * params.range_size));
+    int trials(10);
+    for (int i(0); i < trials; ++i) {
+      Eigen::MatrixXf lhs_dense = Eigen::MatrixXf::Random(row_count, col_count);
+      Eigen::MatrixXf rhs_dense = Eigen::MatrixXf::Random(col_count, row_count);
+
+      double lhs_norm = lhs_dense.squaredNorm();
+      double rhs_norm = rhs_dense.squaredNorm();
+
+      Eigen::MatrixXf product_dense = lhs_dense * rhs_dense;
+
+      Eigen::MatrixXf lhs_sketch     = sketch_cols(lhs_dense, transform_ptr);
+      Eigen::MatrixXf rhs_sketch     = sketch_rows(rhs_dense, transform_ptr);
+      Eigen::MatrixXf product_sketch = lhs_sketch * rhs_sketch;
+
+      double sketch_error = (product_dense - product_sketch).squaredNorm();
+
+      double bound      = expected_epsilon * lhs_norm * rhs_norm;
+      double this_error = sketch_error / (lhs_norm * rhs_norm);
+      empirical_epsilon += this_error;
+      if (sketch_error <= bound) {
+        success_rate += 1.0;
+      }
+      if (params.verbose) {
+        std::cout << "\tbound " << bound << ", squared error " << sketch_error
+                  << " (multiplicative error: " << this_error
+                  << ") (in bounds: " << (sketch_error <= bound) << ")"
+                  << std::endl;
+      }
+    }
+    success_rate /= trials;
+    empirical_epsilon /= trials;
+    bool amm_guarantee_success = success_rate > 0.5;
+    CHECK_CONDITION(amm_guarantee_success == true, "AMM guarantee (", trials,
+                    " trials, ", success_rate,
+                    " success rate, expected epsilon=", expected_epsilon,
+                    ", mean empirical epsilon=", empirical_epsilon, ")");
+  }
+
   void operator()(const Parameters &params) const {
     make_ptr_type     _make_ptr     = make_ptr_type();
     make_row_ptr_type _make_row_ptr = make_row_ptr_type();
@@ -478,7 +537,7 @@ struct ingest_check {
         _make_ptr(row_transform_ptr, col_transform_ptr));
 
     rel_mag_test(transform_ptr, params);
-    // lemma_check(lhs_ptr, rhs_prt, params);
+    amm_test(row_transform_ptr, params);
   }
 };
 
