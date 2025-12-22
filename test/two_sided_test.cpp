@@ -474,9 +474,8 @@ struct ingest_check {
 
     double success_rate(0.0);
     double empirical_epsilon(0.0);
-    double expected_epsilon =
-        std::sqrt(16 * std::log(params.observation_count) /
-                  (params.range_size * params.range_size));
+    double expected_epsilon = std::sqrt(
+        16 * std::log(row_count) / (params.range_size * params.range_size));
     int trials(10);
     for (int i(0); i < trials; ++i) {
       Eigen::MatrixXf lhs_dense = Eigen::MatrixXf::Random(row_count, col_count);
@@ -524,9 +523,8 @@ struct ingest_check {
 
     double success_rate(0.0);
     double empirical_epsilon(0.0);
-    double expected_epsilon =
-        std::sqrt(16 * std::log(params.observation_count) /
-                  (params.range_size * params.range_size));
+    double expected_epsilon = std::sqrt(
+        16 * std::log(row_count) / (params.range_size * params.range_size));
     int trials(10);
     for (int i(0); i < trials; ++i) {
       Eigen::MatrixXf A_dense = Eigen::MatrixXf::Random(row_count, col_count);
@@ -570,77 +568,76 @@ struct ingest_check {
                     ", mean empirical epsilon=", empirical_epsilon, ")");
   }
 
-  // bool in_bounds(const double ob_dist, const double sk_dist,
-  //                const double epsilon) const {
-  //   return (sk_dist < (1 + epsilon) * ob_dist) &&
-  //          (sk_dist > (1 - epsilon) * ob_dist);
-  // }
+  bool in_bounds(const double ob_dist, const double sk_dist,
+                 const double epsilon) const {
+    return (sk_dist < (1 + epsilon) * ob_dist) &&
+           (sk_dist > (1 - epsilon) * ob_dist);
+  }
 
-  // float spectral_norm(const Eigen::MatrixXf &matrix) const {
-  //   Eigen::JacobiSVD<Eigen::MatrixXf> svd(
-  //       matrix, Eigen::ComputeThinU | Eigen::ComputeThinV);
-  //   return svd.singularValues()(0);
-  // }
+  float spectral_norm(const Eigen::MatrixXf &matrix) const {
+    Eigen::JacobiSVD<Eigen::MatrixXf> svd(
+        matrix, Eigen::ComputeThinU | Eigen::ComputeThinV);
+    return svd.singularValues()(0);
+  }
 
-  // void power_iteration_test(const row_transform_ptr_type &row_transform_ptr,
-  //                           const transform_ptr_type     &transform_ptr,
-  //                           const Parameters             &params) const {
-  //   const int col_count = 256;
+  void power_iteration_test(const row_transform_ptr_type &row_transform_ptr,
+                            const transform_ptr_type     &transform_ptr,
+                            const Parameters             &params) const {
+    const int col_count = 256;
 
-  //   Eigen::MatrixXf matrix = Eigen::MatrixXf::Random(col_count, col_count);
+    Eigen::MatrixXf matrix = Eigen::MatrixXf::Random(col_count, col_count);
 
-  //   Eigen::MatrixXf product_exact = matrix * matrix;
+    Eigen::MatrixXf product_exact = matrix * matrix;
 
-  //   double norm =
-  //       product_exact.squaredNorm() / std::pow(spectral_norm(product_exact),
-  //       2);
+    double norm =
+        product_exact.squaredNorm() / std::pow(spectral_norm(product_exact), 2);
 
-  //   Eigen::MatrixXf AS_sketch = sketch_cols(matrix, row_transform_ptr);
-  //   sketch_type     sketch(transform_ptr);
-  //   sketch_both(matrix, sketch);
-  //   Eigen::MatrixXf STAR_sketch    = sketch.scaled_registers();
-  //   Eigen::MatrixXf product_sketch = AS_sketch * STAR_sketch;
+    Eigen::MatrixXf AS_sketch = sketch_cols(matrix, row_transform_ptr);
+    sketch_type     sketch(transform_ptr);
+    sketch_both(matrix, sketch);
+    Eigen::MatrixXf STAR_sketch    = sketch.scaled_registers();
+    Eigen::MatrixXf product_sketch = AS_sketch * STAR_sketch;
 
-  //   double success_rate(0.0);
-  //   double empirical_epsilon(0.0);
-  //   double expected_epsilon =
-  //       std::sqrt(16 * std::log(params.observation_count) * norm /
-  //                 (params.range_size * params.range_size));
-  //   int trials(0);
-  //   for (int i(0); i < params.observation_count; ++i) {
-  //     for (int j(0); j < params.observation_count; ++j) {
-  //       if (i == j) {
-  //         break;
-  //       }
-  //       ++trials;
-  //       double dist_exact =
-  //           (product_exact.row(i) - product_exact.row(j)).lpNorm<2>();
-  //       double dist_sketch =
-  //           (product_sketch.row(i) - product_sketch.row(j)).lpNorm<2>();
-  //       double this_error = std::abs(1.0 - dist_sketch / dist_exact);
-  //       empirical_epsilon += this_error;
-  //       if (in_bounds(dist_exact, dist_sketch, expected_epsilon)) {
-  //         success_rate += 1.0;
-  //       }
-  //       if (params.verbose) {
-  //         std::cout << "\t(" << i << "," << j << ") ob " << dist_exact
-  //                   << ", sk " << dist_sketch
-  //                   << " (multiplicative error: 1 +/- " << this_error
-  //                   << ") (in bounds: "
-  //                   << in_bounds(dist_exact, dist_sketch, expected_epsilon)
-  //                   << ")" << std::endl;
-  //       }
-  //     }
-  //   }
-  //   success_rate /= trials;
-  //   empirical_epsilon /= trials;
-  //   bool ammm_guarantee_success = success_rate > 0.5;
-  //   CHECK_CONDITION(ammm_guarantee_success == true, "AMM guarantee (",
-  //   trials,
-  //                   " trials, ", success_rate,
-  //                   " success rate, expected epsilon=", expected_epsilon,
-  //                   ", mean empirical epsilon=", empirical_epsilon, ")");
-  // }
+    double success_rate(0.0);
+    double empirical_epsilon(0.0);
+    double expected_epsilon =
+        std::sqrt(16 * std::log(col_count) * norm /
+                  (params.range_size * params.range_size));
+    int trials(0);
+    for (int i(0); i < col_count; ++i) {
+      for (int j(0); j < col_count; ++j) {
+        if (i == j) {
+          break;
+        }
+        ++trials;
+        double dist_exact =
+            (product_exact.row(i) - product_exact.row(j)).lpNorm<2>();
+        double dist_sketch =
+            (product_sketch.row(i) - product_sketch.row(j)).lpNorm<2>();
+        double this_error = std::abs(1.0 - dist_sketch / dist_exact);
+        empirical_epsilon += this_error;
+        if (in_bounds(dist_exact, dist_sketch, expected_epsilon)) {
+          success_rate += 1.0;
+        }
+        if (params.verbose) {
+          std::cout << "\t(" << i << "," << j << ") exact " << dist_exact
+                    << ", sketched " << dist_sketch
+                    << " (multiplicative error: 1 +/- " << this_error
+                    << ") (in bounds: "
+                    << in_bounds(dist_exact, dist_sketch, expected_epsilon)
+                    << ")" << std::endl;
+        }
+      }
+    }
+    success_rate /= trials;
+    empirical_epsilon /= trials;
+    bool ammm_guarantee_success = success_rate > 0.5;
+    CHECK_CONDITION(ammm_guarantee_success == true,
+                    "power iteration approximate row distances guarantee (",
+                    trials, " trials, ", success_rate,
+                    " success rate, expected epsilon=", expected_epsilon,
+                    ", mean empirical epsilon=", empirical_epsilon, ")");
+  }
 
   void operator()(const Parameters &params) const {
     make_ptr_type     _make_ptr     = make_ptr_type();
@@ -655,7 +652,7 @@ struct ingest_check {
     rel_mag_test(transform_ptr, params);
     amm_test(row_transform_ptr, params);
     ammm_test(row_transform_ptr, col_transform_ptr, transform_ptr, params);
-    // power_iteration_test(row_transform_ptr, transform_ptr, params);
+    power_iteration_test(row_transform_ptr, transform_ptr, params);
   }
 };
 
