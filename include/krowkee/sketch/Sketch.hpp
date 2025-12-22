@@ -44,6 +44,8 @@ class Sketch {
   using register_type = typename transform_type::register_type;
   /** Alias for fully-templated container type */
   using container_type = ContainerType;
+  /** Alias for fully-templated raw container type */
+  using registers_type = typename container_type::dense_registers_type;
   /** Alias for fully-templated self type*/
   using self_type = Sketch<transform_type, ContainerType, PtrType>;
 
@@ -105,6 +107,10 @@ class Sketch {
    * container object.
    */
   const container_type &container() { return _container; }
+
+  registers_type scaled_registers() const {
+    return _container.scaled_registers(transform_type::scaling_factor);
+  }
 
   //////////////////////////////////////////////////////////////////////////////
   // Insertion
@@ -296,28 +302,6 @@ class Sketch {
    */
   constexpr std::size_t compaction_threshold() const {
     return _container.compaction_threshold();
-  }
-
-  /**
-   * @brief Get a copy of the raw vector of registers in the container.
-   *
-   * @return std::vector<register_type> The register vector.
-   */
-  std::vector<register_type> register_vector() const {
-    return _container.register_vector();
-  }
-
-  /**
-   * @brief Get a copy of the scaled vector of registers in the container.
-   *
-   * @return std::vector<register_type> The scaled register vector.
-   */
-  std::vector<register_type> scaled_registers() const {
-    std::vector<register_type> registers(register_vector());
-    for (int i(0); i < registers.size(); ++i) {
-      registers[i] /= transform_type::scaling_factor;
-    }
-    return registers;
   }
 
   //////////////////////////////////////////////////////////////////////////////

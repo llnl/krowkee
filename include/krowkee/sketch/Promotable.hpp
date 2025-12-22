@@ -50,11 +50,16 @@ class Promotable {
   using sparse_type =
       krowkee::sketch::Sparse<register_type, MergeOp, MapType, KeyType, Size,
                               CompactionThreshold>;
-  using map_type        = typename sparse_type::map_type;
-  using sparse_ptr_type = std::unique_ptr<sparse_type>;
+  using map_type             = typename sparse_type::map_type;
+  using sparse_ptr_type      = std::unique_ptr<sparse_type>;
+  using dense_registers_type = typename dense_type::dense_registers_type;
   /** Alias for the fully-templated Promotable container. */
   using self_type = Promotable<register_type, MergeOp, MapType, KeyType, Size,
                                CompactionThreshold, PromotionThreshold>;
+
+  static_assert(
+      std::is_same<typename dense_type::dense_registers_type,
+                   typename sparse_type::dense_registers_type>::value);
 
  private:
   dense_ptr_type       _dense_ptr;
@@ -240,10 +245,24 @@ class Promotable {
    *
    * @return std::vector<register_type> Copy of the register vector.
    */
-  std::vector<register_type> register_vector() const {
+  dense_registers_type registers() const {
+    return (_mode == promotable_mode_type::sparse) ? _sparse_ptr->registers()
+                                                   : _dense_ptr->registers();
+  }
+
+  /**
+   * @brief Get a copy of the scaled register vector.
+   *
+   * The vector will be sparse, with zeros for unset indices, if we are in
+   * Sparse mode.
+   *
+   * @param scaling_factor the scalar scaling factor.
+   * @return std::vector<register_type> Copy of the register vector.
+   */
+  dense_registers_type scaled_registers(const double scaling_factor) const {
     return (_mode == promotable_mode_type::sparse)
-               ? _sparse_ptr->register_vector()
-               : _dense_ptr->register_vector();
+               ? _sparse_ptr->scaled_registers(scaling_factor)
+               : _dense_ptr->scaled_registers(scaling_factor);
   }
 
   //////////////////////////////////////////////////////////////////////////////

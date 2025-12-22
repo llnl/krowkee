@@ -82,7 +82,7 @@ constexpr MatrixType sketch_cols(const MatrixType       &matrix,
     }
     ++i;
   }
-  return sketch_matrix;
+  return sketch_matrix / transform_ptr->scaling_factor;
 }
 
 template <typename MatrixType, typename TransformPtrType>
@@ -114,7 +114,7 @@ constexpr MatrixType sketch_rows(const MatrixType       &matrix,
     }
     ++j;
   }
-  return sketch_matrix;
+  return sketch_matrix / transform_ptr->scaling_factor;
 }
 
 /**
@@ -320,15 +320,15 @@ struct good_merge_check {
     sketch_both(matrix_B, sketch_B, sketch_AB, sketch_ABC);
     sketch_both(matrix_C, sketch_C, sketch_ABC);
 
-    std::size_t size = sketch_A.container().get_registers().size();
+    std::size_t size = sketch_A.size();
     {
       sketch_type merge_AB      = (sketch_A + sketch_B);
       bool        merge_success = merge_AB == sketch_AB;
       if (merge_success == false) {
         std::cout << "fails with mean absolute error "
                   << krowkee::sketch::detail::mean_absolute_error(
-                         merge_AB.container().get_registers(),
-                         sketch_AB.container().get_registers())
+                         merge_AB.container().registers(),
+                         sketch_AB.container().registers())
                   << std::endl;
         if (size <= 256) {
           std::cout << "merge_AB:" << std::endl
@@ -347,8 +347,8 @@ struct good_merge_check {
       if (multimerge_success == false) {
         std::cout << "fails with mean absolute error "
                   << krowkee::sketch::detail::mean_absolute_error(
-                         merge_ABC.container().get_registers(),
-                         sketch_ABC.container().get_registers())
+                         merge_ABC.container().registers(),
+                         sketch_ABC.container().registers())
                   << std::endl;
         if (size <= 256) {
           std::cout << "merge_ABC:" << std::endl
@@ -367,8 +367,8 @@ struct good_merge_check {
       if (inplace_merge_success == false) {
         std::cout << "fails with mean absolute error "
                   << krowkee::sketch::detail::mean_absolute_error(
-                         sketch_A.container().get_registers(),
-                         sketch_AB.container().get_registers())
+                         sketch_A.container().registers(),
+                         sketch_AB.container().registers())
                   << std::endl;
         if (size <= 256) {
           std::cout << "sketch_A:" << std::endl
@@ -542,7 +542,7 @@ struct ingest_check {
       Eigen::MatrixXf A_sketch = sketch_cols(A_dense, col_transform_ptr);
       sketch_type     sketch(transform_ptr);
       sketch_both(B_dense, sketch);
-      Eigen::MatrixXf B_sketch       = sketch.container().get_registers();
+      Eigen::MatrixXf B_sketch       = sketch.scaled_registers();
       Eigen::MatrixXf C_sketch       = sketch_rows(C_dense, row_transform_ptr);
       Eigen::MatrixXf product_sketch = A_sketch * B_sketch * C_sketch;
 
@@ -570,6 +570,78 @@ struct ingest_check {
                     ", mean empirical epsilon=", empirical_epsilon, ")");
   }
 
+  // bool in_bounds(const double ob_dist, const double sk_dist,
+  //                const double epsilon) const {
+  //   return (sk_dist < (1 + epsilon) * ob_dist) &&
+  //          (sk_dist > (1 - epsilon) * ob_dist);
+  // }
+
+  // float spectral_norm(const Eigen::MatrixXf &matrix) const {
+  //   Eigen::JacobiSVD<Eigen::MatrixXf> svd(
+  //       matrix, Eigen::ComputeThinU | Eigen::ComputeThinV);
+  //   return svd.singularValues()(0);
+  // }
+
+  // void power_iteration_test(const row_transform_ptr_type &row_transform_ptr,
+  //                           const transform_ptr_type     &transform_ptr,
+  //                           const Parameters             &params) const {
+  //   const int col_count = 256;
+
+  //   Eigen::MatrixXf matrix = Eigen::MatrixXf::Random(col_count, col_count);
+
+  //   Eigen::MatrixXf product_exact = matrix * matrix;
+
+  //   double norm =
+  //       product_exact.squaredNorm() / std::pow(spectral_norm(product_exact),
+  //       2);
+
+  //   Eigen::MatrixXf AS_sketch = sketch_cols(matrix, row_transform_ptr);
+  //   sketch_type     sketch(transform_ptr);
+  //   sketch_both(matrix, sketch);
+  //   Eigen::MatrixXf STAR_sketch    = sketch.scaled_registers();
+  //   Eigen::MatrixXf product_sketch = AS_sketch * STAR_sketch;
+
+  //   double success_rate(0.0);
+  //   double empirical_epsilon(0.0);
+  //   double expected_epsilon =
+  //       std::sqrt(16 * std::log(params.observation_count) * norm /
+  //                 (params.range_size * params.range_size));
+  //   int trials(0);
+  //   for (int i(0); i < params.observation_count; ++i) {
+  //     for (int j(0); j < params.observation_count; ++j) {
+  //       if (i == j) {
+  //         break;
+  //       }
+  //       ++trials;
+  //       double dist_exact =
+  //           (product_exact.row(i) - product_exact.row(j)).lpNorm<2>();
+  //       double dist_sketch =
+  //           (product_sketch.row(i) - product_sketch.row(j)).lpNorm<2>();
+  //       double this_error = std::abs(1.0 - dist_sketch / dist_exact);
+  //       empirical_epsilon += this_error;
+  //       if (in_bounds(dist_exact, dist_sketch, expected_epsilon)) {
+  //         success_rate += 1.0;
+  //       }
+  //       if (params.verbose) {
+  //         std::cout << "\t(" << i << "," << j << ") ob " << dist_exact
+  //                   << ", sk " << dist_sketch
+  //                   << " (multiplicative error: 1 +/- " << this_error
+  //                   << ") (in bounds: "
+  //                   << in_bounds(dist_exact, dist_sketch, expected_epsilon)
+  //                   << ")" << std::endl;
+  //       }
+  //     }
+  //   }
+  //   success_rate /= trials;
+  //   empirical_epsilon /= trials;
+  //   bool ammm_guarantee_success = success_rate > 0.5;
+  //   CHECK_CONDITION(ammm_guarantee_success == true, "AMM guarantee (",
+  //   trials,
+  //                   " trials, ", success_rate,
+  //                   " success rate, expected epsilon=", expected_epsilon,
+  //                   ", mean empirical epsilon=", empirical_epsilon, ")");
+  // }
+
   void operator()(const Parameters &params) const {
     make_ptr_type     _make_ptr     = make_ptr_type();
     make_row_ptr_type _make_row_ptr = make_row_ptr_type();
@@ -583,6 +655,7 @@ struct ingest_check {
     rel_mag_test(transform_ptr, params);
     amm_test(row_transform_ptr, params);
     ammm_test(row_transform_ptr, col_transform_ptr, transform_ptr, params);
+    // power_iteration_test(row_transform_ptr, transform_ptr, params);
   }
 };
 
@@ -664,7 +737,7 @@ struct spot_check {
       if (correct_updates == false) {
         std::cout << fail_ss.str();
         std::cout << ss.str() << std::endl;
-        if (sketch.container().get_registers().size() <= 256) {
+        if (sketch.size() <= 256) {
           std::cout << "sketch:" << std::endl
                     << sketch.container() << std::endl
                     << std::endl;
@@ -678,12 +751,12 @@ struct spot_check {
         Eigen::MatrixXf matrix_STAR = sketch_rows(matrix_AR, row_transform_ptr);
 
         bool allclose = krowkee::sketch::detail::allclose(
-            matrix_STAR, sketch.container().get_registers());
+            matrix_STAR, sketch.scaled_registers());
         std::size_t size = matrix_STAR.size();
         if (allclose == false) {
           std::cout << "fails with mean absolute error "
                     << krowkee::sketch::detail::mean_absolute_error(
-                           matrix_STAR, sketch.container().get_registers())
+                           matrix_STAR, sketch.container().registers())
                     << std::endl;
           std::cout << ss.str() << std::endl;
           if (size <= 256) {
@@ -723,12 +796,12 @@ struct spot_check {
       CHECK_CONDITION(dense_allclose == true, "both dense version match");
 
       bool allclose = krowkee::sketch::detail::allclose(
-          matrix_STAR, sketch.container().get_registers());
+          matrix_STAR, sketch.scaled_registers());
       std::size_t size = matrix_STAR.size();
       if (allclose == false) {
         std::cout << "fails with mean absolute error "
                   << krowkee::sketch::detail::mean_absolute_error(
-                         matrix_STAR, sketch.container().get_registers())
+                         matrix_STAR, sketch.scaled_registers())
                   << std::endl;
         if (size <= 256) {
           std::cout << "matrix_STAR:" << std::endl

@@ -128,6 +128,8 @@ class Matrix {
   using register_type = RegType;
   using registers_type =
       Eigen::Matrix<register_type, Eigen::Dynamic, Eigen::Dynamic>;
+  using dense_registers_type =
+      Eigen::Matrix<register_type, Eigen::Dynamic, Eigen::Dynamic>;
   using merge_type = MergeOp<register_type>;
   using self_type  = Matrix<register_type, MergeOp, RowCount, ColCount>;
 
@@ -382,14 +384,17 @@ class Matrix {
    *
    * @return const registers_type The register vector.
    */
-  const registers_type get_registers() const { return _registers; }
+  const registers_type &registers() const { return _registers; }
 
   /**
-   * @brief Get a copy of the raw registers vector.
+   * @brief Get a copy of the scaled registers vector.
    *
+   * @param scaling_factor the scalar scaling factor.
    * @return const registers_type The register vector.
    */
-  registers_type register_vector() const { return _registers; }
+  registers_type scaled_registers(double scaling_factor) const {
+    return _registers / scaling_factor;
+  }
 
   //////////////////////////////////////////////////////////////////////////////
   // Equality operators

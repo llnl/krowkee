@@ -177,7 +177,7 @@ class DoubleSparseJLT {
    * @return constexpr std::size_t The replication count.
    */
   static constexpr RegType scaling_factor =
-      std::sqrt((RegType)replication_count());
+      row_transform_type::scaling_factor * col_transform_type::scaling_factor;
 
   /**
    * @brief Get the total number of addressable registers across all hash
