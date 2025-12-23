@@ -173,7 +173,7 @@ int main(int argc, char **argv) {
     // sketches have accumulated. This is currently required, but the sketches
     // may perform scaling on insertion in a future version, in which case this
     // step is no longer necessary.
-    ygm::container::map<int, std::vector<float>> embeddings(world);
+    ygm::container::map<int, Eigen::VectorXf> embeddings(world);
 
     sketch_map_AS.for_all([&embeddings, &matrix_StARRtAQ, &matrix_StAR](
                               const int idx, const sketch_type &sketch) {
@@ -184,29 +184,9 @@ int main(int argc, char **argv) {
             static_cast<float>(scaled_registers[i]);
       }
       embedding *= matrix_StARRtAQ;
-      for (std::size_t i(0); i < scaled_registers.size(); ++i) {
-        scaled_registers[i] = embedding[i];
-      }
-      embeddings.async_insert(idx, scaled_registers);
+      embeddings.async_insert(idx, embedding);
     });
     world.barrier();
-
-    // We print out the found embeddings. At this point the user can use
-    // `embeddings` as the feature vectors in a downstream algorithm.
-    // world.cout0();
-    // world.cout0(
-    //     "These are the (index, register) pairs resulting from each sketch on
-    //     " "each rank:");
-    // embeddings.for_all(
-    //     [&world](const int idx, const std::vector<float> &embedding) {
-    //       std::stringstream ss;
-    //       ss << "has embedding (index " << idx << "):";
-    //       for (const auto &reg : embedding) {
-    //         ss << " " << reg;
-    //       }
-    //       world.cout(ss.str());
-    //     });
-    // world.barrier();
 
     // We compute the ground truth power iteration of the matrix.
 
@@ -221,23 +201,19 @@ int main(int argc, char **argv) {
         std::sqrt(16 * std::log(col_count) * srank / (range_size * range_size));
     static int trials(0);
 
-    embeddings.for_all([&embeddings](const int                 lhs_idx,
-                                     const std::vector<float> &lhs_embedding) {
+    embeddings.for_all([&embeddings](const int              lhs_idx,
+                                     const Eigen::VectorXf &lhs_embedding) {
       for (int rhs_idx(lhs_idx + 1); rhs_idx < row_count; ++rhs_idx) {
         embeddings.async_visit(
             rhs_idx,
-            [](const int rhs_idx, const std::vector<float> &rhs_embedding,
-               const int lhs_idx, const std::vector<float> &lhs_embedding) {
+            [](const int rhs_idx, const Eigen::VectorXf &rhs_embedding,
+               const int lhs_idx, const Eigen::VectorXf &lhs_embedding) {
               ++trials;
               double exact_dist =
                   (matrix_AAA.row(lhs_idx) - matrix_AAA.row(rhs_idx))
                       .lpNorm<2>();
-              double sketch_dist(0.0);
-              for (int i(0); i < lhs_embedding.size(); ++i) {
-                sketch_dist += std::pow(lhs_embedding[i] - rhs_embedding[i], 2);
-              }
-              sketch_dist       = std::sqrt(sketch_dist);
-              double this_error = std::abs(1.0 - sketch_dist / exact_dist);
+              double sketch_dist = (lhs_embedding - rhs_embedding).lpNorm<2>();
+              double this_error  = std::abs(1.0 - sketch_dist / exact_dist);
               empirical_epsilon += this_error;
               if (in_bounds(exact_dist, sketch_dist, expected_epsilon)) {
                 success_rate += 1.0;
