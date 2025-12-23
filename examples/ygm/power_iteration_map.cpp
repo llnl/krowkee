@@ -36,8 +36,9 @@ int main(int argc, char **argv) {
   // ygm::container::map.
   ygm::comm world(&argc, &argv);
   {
-    const std::size_t row_count = 256;
-    const std::size_t col_count = row_count;
+    const std::size_t row_count(256);
+    const std::size_t col_count(row_count);
+    const std::size_t transform_count(4);
     std::uint64_t     seed(4);
     bool              verbose(true);
 
@@ -85,32 +86,42 @@ int main(int argc, char **argv) {
     static_assert(std::is_same<
                   single_transform_type,
                   typename double_transform_type::col_transform_type>::value);
-    single_transform_type     transform_S{seed};
-    single_transform_type     transform_R{seed};
-    single_transform_type     transform_Q{seed};
-    single_transform_ptr_type transform_S_ptr(world.make_ygm_ptr(transform_S));
-    single_transform_ptr_type transform_R_ptr(world.make_ygm_ptr(transform_R));
-    single_transform_ptr_type transform_Q_ptr(world.make_ygm_ptr(transform_Q));
-    double_transform_type     transform_SR(transform_S_ptr, transform_R_ptr);
-    double_transform_type     transform_RQ(transform_S_ptr, transform_R_ptr);
-    double_transform_ptr_type transform_SR_ptr(
-        world.make_ygm_ptr(transform_SR));
-    double_transform_ptr_type transform_RQ_ptr(
-        world.make_ygm_ptr(transform_RQ));
+    std::vector<single_transform_type> single_transforms;
+    for (int i(0); i < transform_count; ++i) {
+      single_transforms.emplace_back(seed + i);
+    }
+    std::vector<single_transform_ptr_type> single_transform_ptrs;
+    for (single_transform_type &transform : single_transforms) {
+      single_transform_ptrs.push_back(world.make_ygm_ptr(transform));
+    }
+    std::vector<double_transform_type> double_transforms;
+    for (int i(0); i < transform_count - 1; ++i) {
+      double_transforms.emplace_back(single_transform_ptrs[i],
+                                     single_transform_ptrs[i + 1]);
+    }
+    std::vector<double_transform_ptr_type> double_transform_ptrs;
+    for (double_transform_type &double_transform : double_transforms) {
+      double_transform_ptrs.push_back(world.make_ygm_ptr(double_transform));
+    }
 
     // We create a `ygm::container::map` that will hold the AS embeddings for
     // each of our sketches. We also create an empty sketch using our transform
     // as the default value.
-    sketch_type                           default_sketch(transform_S_ptr);
-    ygm::container::map<int, sketch_type> sketch_map_AS(world, default_sketch);
+    sketch_type default_sketch(single_transform_ptrs[0]);
+    ygm::container::map<int, sketch_type> sketch_map(world, default_sketch);
 
     // We also create local double-sided sketches that will hold the double
     // sided embeddings.
-    double_sketch_type sketch_StAR(transform_SR_ptr);
-    double_sketch_type sketch_RtAQ(transform_RQ_ptr);
-    using double_sketch_ptr_type           = ygm::ygm_ptr<double_sketch_type>;
-    double_sketch_ptr_type sketch_StAR_ptr = world.make_ygm_ptr(sketch_StAR);
-    double_sketch_ptr_type sketch_RtAQ_ptr = world.make_ygm_ptr(sketch_RtAQ);
+    std::vector<double_sketch_type> double_sketches;
+    for (const double_transform_ptr_type &double_transform_ptr :
+         double_transform_ptrs) {
+      double_sketches.emplace_back(double_transform_ptr);
+    }
+    using double_sketch_ptr_type = ygm::ygm_ptr<double_sketch_type>;
+    std::vector<double_sketch_ptr_type> double_sketch_ptrs;
+    for (double_sketch_type &double_sketch : double_sketches) {
+      double_sketch_ptrs.push_back(world.make_ygm_ptr(double_sketch));
+    }
 
     // We sample a random matrix to embed. Note that this is not implemented
     // efficiently, as this is a toy example and we will compute a ground
@@ -131,18 +142,19 @@ int main(int argc, char **argv) {
           // simultaneously updating the two-sided sketches.
           auto insert_lambda = [](const int &row_idx, sketch_type &sketch,
                                   const int &col_idx, const float update,
-                                  auto SR_ptr, auto RQ_ptr) {
+                                  std::vector<double_sketch_ptr_type> ptr_vec) {
             // insert `(col_idx) <- update` into a sketch vector associated
             // with row_idx.
             sketch.insert(col_idx, update);
             // insert `(row_idx, col_idx) <- update' into both matrix
             // sketches.
-            SR_ptr->insert({row_idx, col_idx}, update);
-            RQ_ptr->insert({row_idx, col_idx}, update);
+            for (int i(0); i < ptr_vec.size(); ++i) {
+              ptr_vec[i]->insert({row_idx, col_idx}, update);
+            }
           };
-          sketch_map_AS.async_visit(row_idx, insert_lambda, col_idx,
-                                    matrix_A(row_idx, col_idx), sketch_StAR_ptr,
-                                    sketch_RtAQ_ptr);
+          sketch_map.async_visit(row_idx, insert_lambda, col_idx,
+                                 matrix_A(row_idx, col_idx),
+                                 double_sketch_ptrs);
         }
       }
     }
@@ -150,48 +162,53 @@ int main(int argc, char **argv) {
 
     // We produce scaled embeddings for the matrix sketches and allreduce them
     // to put all updates in one place.
-    Eigen::MatrixXf matrix_StAR_pre = sketch_StAR.scaled_registers();
-    Eigen::MatrixXf matrix_RtAQ_pre = sketch_RtAQ.scaled_registers();
-
-    Eigen::MatrixXf matrix_StAR = Eigen::MatrixXf::Zero(row_count, col_count);
-    Eigen::MatrixXf matrix_RtAQ = Eigen::MatrixXf::Zero(row_count, col_count);
-
-    YGM_ASSERT_MPI(MPI_Allreduce(
-        matrix_StAR_pre.data(), matrix_StAR.data(), row_count * col_count,
-        ygm::detail::mpi_typeof(float()), MPI_SUM, world.get_mpi_comm()));
-    world.barrier();
-    YGM_ASSERT_MPI(MPI_Allreduce(
-        matrix_RtAQ_pre.data(), matrix_RtAQ.data(), row_count * col_count,
-        ygm::detail::mpi_typeof(float()), MPI_SUM, world.get_mpi_comm()));
-    world.barrier();
+    std::vector<Eigen::MatrixXf> double_matrices_pre;
+    for (const double_sketch_type &double_sketch : double_sketches) {
+      double_matrices_pre.push_back(double_sketch.scaled_registers());
+    }
+    std::vector<Eigen::MatrixXf> double_matrices;
+    for (int i(0); i < double_sketches.size(); ++i) {
+      double_matrices.push_back(Eigen::MatrixXf::Zero(row_count, col_count));
+      YGM_ASSERT_MPI(MPI_Allreduce(
+          double_matrices_pre[i].data(), double_matrices[i].data(),
+          row_count * col_count, ygm::detail::mpi_typeof(float()), MPI_SUM,
+          world.get_mpi_comm()));
+      world.barrier();
+    }
 
     // multiply the (small) matrix sketches in-place so that everyone can access
     // the power iteration linear operator.
-    Eigen::MatrixXf matrix_StARRtAQ = matrix_StAR * matrix_RtAQ;
+    Eigen::MatrixXf partial_product_sketch = double_matrices[0];
+    for (int i(1); i < double_matrices.size(); ++i) {
+      partial_product_sketch *= double_matrices[i];
+    }
 
     // We prepare a datastructure to hold the scaled embeddings once all
-    // sketches have accumulated. This is currently required, but the sketches
-    // may perform scaling on insertion in a future version, in which case this
-    // step is no longer necessary.
+    // sketches have accumulated. This is currently required, but the
+    // sketches may perform scaling on insertion in a future version, in
+    // which case this step is no longer necessary.
     ygm::container::map<int, Eigen::VectorXf> embeddings(world);
 
-    sketch_map_AS.for_all([&embeddings, &matrix_StARRtAQ, &matrix_StAR](
-                              const int idx, const sketch_type &sketch) {
+    sketch_map.for_all([&embeddings, &partial_product_sketch](
+                           const int idx, const sketch_type &sketch) {
       Eigen::VectorXf embedding(sketch.size());
       auto            scaled_registers = sketch.scaled_registers();
       for (std::size_t i(0); i < scaled_registers.size(); ++i) {
         embedding(static_cast<Eigen::Index>(i)) =
             static_cast<float>(scaled_registers[i]);
       }
-      embedding *= matrix_StARRtAQ;
+      embedding *= partial_product_sketch;
       embeddings.async_insert(idx, embedding);
     });
     world.barrier();
 
     // We compute the ground truth power iteration of the matrix.
 
-    static Eigen::MatrixXf matrix_AAA = matrix_A * matrix_A * matrix_A;
-    float                  srank      = stable_rank(matrix_AAA);
+    static Eigen::MatrixXf product_exact = matrix_A;
+    for (int i(1); i < transform_count; ++i) {
+      product_exact *= matrix_A;
+    }
+    float srank = stable_rank(product_exact);
 
     // We now compare the embedding vectors. In practice this could be done more
     // efficiently, but this implementation suffices for illustration.
@@ -210,7 +227,7 @@ int main(int argc, char **argv) {
                const int lhs_idx, const Eigen::VectorXf &lhs_embedding) {
               ++trials;
               double exact_dist =
-                  (matrix_AAA.row(lhs_idx) - matrix_AAA.row(rhs_idx))
+                  (product_exact.row(lhs_idx) - product_exact.row(rhs_idx))
                       .lpNorm<2>();
               double sketch_dist = (lhs_embedding - rhs_embedding).lpNorm<2>();
               double this_error  = std::abs(1.0 - sketch_dist / exact_dist);
@@ -218,12 +235,15 @@ int main(int argc, char **argv) {
               if (in_bounds(exact_dist, sketch_dist, expected_epsilon)) {
                 success_rate += 1.0;
               }
-              std::cout << "\t(" << lhs_idx << "," << rhs_idx << ") exact "
-                        << exact_dist << ", sketched " << sketch_dist
-                        << " (multiplicative error: 1 +/- " << this_error
-                        << ") (in bounds: "
-                        << in_bounds(exact_dist, sketch_dist, expected_epsilon)
-                        << ")" << std::endl;
+              if (lhs_idx == 199) {
+                std::cout << "\t(" << lhs_idx << "," << rhs_idx << ") exact "
+                          << exact_dist << ", sketched " << sketch_dist
+                          << " (multiplicative error: 1 +/- " << this_error
+                          << ") (in bounds: "
+                          << in_bounds(exact_dist, sketch_dist,
+                                       expected_epsilon)
+                          << ")" << std::endl;
+              }
             },
             lhs_idx, lhs_embedding);
       }
@@ -237,7 +257,7 @@ int main(int argc, char **argv) {
     empirical_epsilon /= trials;
 
     world.cout0("\npower iteration approximate row distances guarantee (",
-                trials, "trials), success rate = ", success_rate,
+                trials, " trials), success rate = ", success_rate,
                 ", expected epsilon = ", expected_epsilon,
                 ", mean empirical epsilon = ", empirical_epsilon);
   }
