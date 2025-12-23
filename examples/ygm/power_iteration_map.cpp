@@ -15,6 +15,20 @@
 #include <random>
 #include <type_traits>
 
+float spectral_norm(const Eigen::MatrixXf &matrix) {
+  Eigen::JacobiSVD<Eigen::MatrixXf> svd(
+      matrix, Eigen::ComputeThinU | Eigen::ComputeThinV);
+  return svd.singularValues()(0);
+}
+
+float stable_rank(const Eigen::MatrixXf &matrix) {
+  return matrix.squaredNorm() / std::pow(spectral_norm(matrix), 2);
+}
+
+bool in_bounds(const double tru, const double est, const double eps) {
+  return (est < (1 + eps) * tru) && (est > (1 - eps) * tru);
+}
+
 int main(int argc, char **argv) {
   // We create the YGM communicator to be used. The example proceeds similarly
   // to `examples/sparse_jlt.cpp`, where we sample some large-dimensional data
@@ -22,9 +36,9 @@ int main(int argc, char **argv) {
   // ygm::container::map.
   ygm::comm world(&argc, &argv);
   {
-    const std::size_t row_count = 512;
+    const std::size_t row_count = 256;
     const std::size_t col_count = row_count;
-    std::uint64_t     seed(krowkee::hash::default_seed);
+    std::uint64_t     seed(4);
     bool              verbose(true);
 
     // Using krowkee requires the selection of a sketch type for both a single
@@ -101,7 +115,8 @@ int main(int argc, char **argv) {
     // We sample a random matrix to embed. Note that this is not implemented
     // efficiently, as this is a toy example and we will compute a ground
     // truth solution that is intractable for large matrices.
-    Eigen::MatrixXf matrix_A = Eigen::MatrixXf::Random(row_count, col_count);
+    static Eigen::MatrixXf matrix_A =
+        Eigen::MatrixXf::Random(row_count, col_count);
 
     // We will now simulate asynchronously updates to the associated sketch by
     // communicating elements of the matrix using YGM. In this example each
@@ -133,11 +148,6 @@ int main(int argc, char **argv) {
     }
     world.barrier();
 
-    world.cout0();
-    world.cout0(
-        "These are the (index, register) pairs resulting from each sketch on "
-        "each rank:");
-
     // We produce scaled embeddings for the matrix sketches and allreduce them
     // to put all updates in one place.
     Eigen::MatrixXf matrix_StAR_pre = sketch_StAR.scaled_registers();
@@ -165,7 +175,7 @@ int main(int argc, char **argv) {
     // step is no longer necessary.
     ygm::container::map<int, std::vector<float>> embeddings(world);
 
-    sketch_map_AS.for_all([&embeddings, &matrix_StARRtAQ](
+    sketch_map_AS.for_all([&embeddings, &matrix_StARRtAQ, &matrix_StAR](
                               const int idx, const sketch_type &sketch) {
       Eigen::VectorXf embedding(sketch.size());
       auto            scaled_registers = sketch.scaled_registers();
@@ -183,20 +193,77 @@ int main(int argc, char **argv) {
 
     // We print out the found embeddings. At this point the user can use
     // `embeddings` as the feature vectors in a downstream algorithm.
-    world.cout0();
-    world.cout0(
-        "These are the (index, register) pairs resulting from each sketch on "
-        "each rank:");
-    embeddings.for_all(
-        [&world](const int idx, const std::vector<float> &embedding) {
-          std::stringstream ss;
-          ss << "has embedding (index " << idx << "):";
-          for (const auto &reg : embedding) {
-            ss << " " << reg;
-          }
-          world.cout(ss.str());
-        });
+    // world.cout0();
+    // world.cout0(
+    //     "These are the (index, register) pairs resulting from each sketch on
+    //     " "each rank:");
+    // embeddings.for_all(
+    //     [&world](const int idx, const std::vector<float> &embedding) {
+    //       std::stringstream ss;
+    //       ss << "has embedding (index " << idx << "):";
+    //       for (const auto &reg : embedding) {
+    //         ss << " " << reg;
+    //       }
+    //       world.cout(ss.str());
+    //     });
+    // world.barrier();
+
+    // We compute the ground truth power iteration of the matrix.
+
+    static Eigen::MatrixXf matrix_AAA = matrix_A * matrix_A * matrix_A;
+    float                  srank      = stable_rank(matrix_AAA);
+
+    // We now compare the embedding vectors. In practice this could be done more
+    // efficiently, but this implementation suffices for illustration.
+    static double       success_rate(0.0);
+    static double       empirical_epsilon(0.0);
+    const static double expected_epsilon =
+        std::sqrt(16 * std::log(col_count) * srank / (range_size * range_size));
+    static int trials(0);
+
+    embeddings.for_all([&embeddings](const int                 lhs_idx,
+                                     const std::vector<float> &lhs_embedding) {
+      for (int rhs_idx(lhs_idx + 1); rhs_idx < row_count; ++rhs_idx) {
+        embeddings.async_visit(
+            rhs_idx,
+            [](const int rhs_idx, const std::vector<float> &rhs_embedding,
+               const int lhs_idx, const std::vector<float> &lhs_embedding) {
+              ++trials;
+              double exact_dist =
+                  (matrix_AAA.row(lhs_idx) - matrix_AAA.row(rhs_idx))
+                      .lpNorm<2>();
+              double sketch_dist(0.0);
+              for (int i(0); i < lhs_embedding.size(); ++i) {
+                sketch_dist += std::pow(lhs_embedding[i] - rhs_embedding[i], 2);
+              }
+              sketch_dist       = std::sqrt(sketch_dist);
+              double this_error = std::abs(1.0 - sketch_dist / exact_dist);
+              empirical_epsilon += this_error;
+              if (in_bounds(exact_dist, sketch_dist, expected_epsilon)) {
+                success_rate += 1.0;
+              }
+              std::cout << "\t(" << lhs_idx << "," << rhs_idx << ") exact "
+                        << exact_dist << ", sketched " << sketch_dist
+                        << " (multiplicative error: 1 +/- " << this_error
+                        << ") (in bounds: "
+                        << in_bounds(exact_dist, sketch_dist, expected_epsilon)
+                        << ")" << std::endl;
+            },
+            lhs_idx, lhs_embedding);
+      }
+    });
     world.barrier();
+
+    success_rate      = ygm::sum(success_rate, world);
+    empirical_epsilon = ygm::sum(empirical_epsilon, world);
+    trials            = ygm::sum(trials, world);
+    success_rate /= trials;
+    empirical_epsilon /= trials;
+
+    world.cout0("\npower iteration approximate row distances guarantee (",
+                trials, "trials), success rate = ", success_rate,
+                ", expected epsilon = ", expected_epsilon,
+                ", mean empirical epsilon = ", empirical_epsilon);
   }
 
   return 0;

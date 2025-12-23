@@ -605,10 +605,7 @@ struct ingest_check {
                   (params.range_size * params.range_size));
     int trials(0);
     for (int i(0); i < col_count; ++i) {
-      for (int j(0); j < col_count; ++j) {
-        if (i == j) {
-          break;
-        }
+      for (int j(i + 1); j < col_count; ++j) {
         ++trials;
         double dist_exact =
             (product_exact.row(i) - product_exact.row(j)).lpNorm<2>();
