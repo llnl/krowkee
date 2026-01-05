@@ -40,7 +40,8 @@ int main(int argc, char **argv) {
     const std::size_t col_count(row_count);
     const std::size_t transform_count(4);
     std::uint64_t     seed(4);
-    bool              verbose(true);
+    srand(seed);
+    bool verbose(true);
 
     // Using krowkee requires the selection of a sketch type for both a single
     // and double-sided sketch, here encapsulated as `sketch_type` and
