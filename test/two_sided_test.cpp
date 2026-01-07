@@ -460,7 +460,9 @@ struct ingest_check {
     double rel_mag((double)sum / (1000 * 1000 * params.range_size *
                                   params.replication_count));
     if (params.verbose == true) {
-      std::cout << "\t" << sketch << std::endl;
+      if (sketch.size() <= 256) {
+        std::cout << "\t" << sketch << std::endl;
+      }
       std::cout << "\tregister sum (should be near zero): " << sum
                 << ", relative magnitude: " << rel_mag << std::endl;
     }
@@ -582,15 +584,12 @@ struct ingest_check {
 
   void power_iteration_test(const row_transform_ptr_type &row_transform_ptr,
                             const transform_ptr_type     &transform_ptr,
+                            const Eigen::MatrixXf        &matrix,
                             const Parameters             &params) const {
-    const int col_count = 256;
-
-    Eigen::MatrixXf matrix = Eigen::MatrixXf::Random(col_count, col_count);
-
+    const int       col_count     = static_cast<int>(matrix.cols());
     Eigen::MatrixXf product_exact = matrix * matrix;
 
-    double norm =
-        product_exact.squaredNorm() / std::pow(spectral_norm(product_exact), 2);
+    double norm = matrix.squaredNorm() / std::pow(spectral_norm(matrix), 2);
 
     Eigen::MatrixXf AS_sketch = sketch_cols(matrix, row_transform_ptr);
     sketch_type     sketch(transform_ptr);
@@ -601,7 +600,10 @@ struct ingest_check {
     double success_rate(0.0);
     double empirical_epsilon(0.0);
     double expected_epsilon =
-        std::sqrt(16 * std::log(col_count) * norm /
+        std::sqrt(16 *
+                  (std::log(col_count *
+                            sketch_type::transform_type::replication_count()) +
+                   norm) /
                   (params.range_size * params.range_size));
     int trials(0);
     for (int i(0); i < col_count; ++i) {
@@ -616,7 +618,7 @@ struct ingest_check {
         if (in_bounds(dist_exact, dist_sketch, expected_epsilon)) {
           success_rate += 1.0;
         }
-        if (params.verbose) {
+        if (params.verbose && (i == 199) && (j == 230)) {
           std::cout << "\t(" << i << "," << j << ") exact " << dist_exact
                     << ", sketched " << dist_sketch
                     << " (multiplicative error: 1 +/- " << this_error
@@ -649,7 +651,11 @@ struct ingest_check {
     rel_mag_test(transform_ptr, params);
     amm_test(row_transform_ptr, params);
     ammm_test(row_transform_ptr, col_transform_ptr, transform_ptr, params);
-    power_iteration_test(row_transform_ptr, transform_ptr, params);
+
+    const int       col_count = 256;
+    Eigen::MatrixXf matrix    = Eigen::MatrixXf::Random(col_count, col_count);
+
+    power_iteration_test(row_transform_ptr, transform_ptr, matrix, params);
   }
 };
 
