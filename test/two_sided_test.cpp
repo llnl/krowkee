@@ -564,76 +564,8 @@ struct ingest_check {
     success_rate /= trials;
     empirical_epsilon /= trials;
     bool ammm_guarantee_success = success_rate > 0.5;
-    CHECK_CONDITION(ammm_guarantee_success == true, "AMM guarantee (", trials,
+    CHECK_CONDITION(ammm_guarantee_success == true, "AMMM guarantee (", trials,
                     " trials, ", success_rate,
-                    " success rate, expected epsilon=", expected_epsilon,
-                    ", mean empirical epsilon=", empirical_epsilon, ")");
-  }
-
-  bool in_bounds(const double ob_dist, const double sk_dist,
-                 const double epsilon) const {
-    return (sk_dist < (1 + epsilon) * ob_dist) &&
-           (sk_dist > (1 - epsilon) * ob_dist);
-  }
-
-  float spectral_norm(const Eigen::MatrixXf &matrix) const {
-    Eigen::JacobiSVD<Eigen::MatrixXf> svd(
-        matrix, Eigen::ComputeThinU | Eigen::ComputeThinV);
-    return svd.singularValues()(0);
-  }
-
-  void power_iteration_test(const row_transform_ptr_type &row_transform_ptr,
-                            const transform_ptr_type     &transform_ptr,
-                            const Eigen::MatrixXf        &matrix,
-                            const Parameters             &params) const {
-    const int       col_count     = static_cast<int>(matrix.cols());
-    Eigen::MatrixXf product_exact = matrix * matrix;
-
-    double norm = matrix.squaredNorm() / std::pow(spectral_norm(matrix), 2);
-
-    Eigen::MatrixXf AS_sketch = sketch_cols(matrix, row_transform_ptr);
-    sketch_type     sketch(transform_ptr);
-    sketch_both(matrix, sketch);
-    Eigen::MatrixXf STAR_sketch    = sketch.scaled_registers();
-    Eigen::MatrixXf product_sketch = AS_sketch * STAR_sketch;
-
-    double success_rate(0.0);
-    double empirical_epsilon(0.0);
-    double expected_epsilon =
-        std::sqrt(16 *
-                  (std::log(col_count *
-                            sketch_type::transform_type::replication_count()) +
-                   norm) /
-                  (params.range_size * params.range_size));
-    int trials(0);
-    for (int i(0); i < col_count; ++i) {
-      for (int j(i + 1); j < col_count; ++j) {
-        ++trials;
-        double dist_exact =
-            (product_exact.row(i) - product_exact.row(j)).lpNorm<2>();
-        double dist_sketch =
-            (product_sketch.row(i) - product_sketch.row(j)).lpNorm<2>();
-        double this_error = std::abs(1.0 - dist_sketch / dist_exact);
-        empirical_epsilon += this_error;
-        if (in_bounds(dist_exact, dist_sketch, expected_epsilon)) {
-          success_rate += 1.0;
-        }
-        if (params.verbose && (i == 199) && (j == 230)) {
-          std::cout << "\t(" << i << "," << j << ") exact " << dist_exact
-                    << ", sketched " << dist_sketch
-                    << " (multiplicative error: 1 +/- " << this_error
-                    << ") (in bounds: "
-                    << in_bounds(dist_exact, dist_sketch, expected_epsilon)
-                    << ")" << std::endl;
-        }
-      }
-    }
-    success_rate /= trials;
-    empirical_epsilon /= trials;
-    bool ammm_guarantee_success = success_rate > 0.5;
-    CHECK_CONDITION(ammm_guarantee_success == true,
-                    "power iteration approximate row distances guarantee (",
-                    trials, " trials, ", success_rate,
                     " success rate, expected epsilon=", expected_epsilon,
                     ", mean empirical epsilon=", empirical_epsilon, ")");
   }
@@ -651,11 +583,136 @@ struct ingest_check {
     rel_mag_test(transform_ptr, params);
     amm_test(row_transform_ptr, params);
     ammm_test(row_transform_ptr, col_transform_ptr, transform_ptr, params);
+  }
+};
 
+template <typename SketchType, template <typename> class MakePtrFunc>
+struct power_iteration_check {
+  using sketch_type        = SketchType;
+  using transform_type     = typename sketch_type::transform_type;
+  using transform_ptr_type = typename sketch_type::transform_ptr_type;
+  using make_ptr_type      = MakePtrFunc<transform_type>;
+  using row_transform_type = typename transform_type::row_transform_type;
+  using row_transform_ptr_type =
+      typename transform_type::row_transform_ptr_type;
+  using make_row_ptr_type  = MakePtrFunc<row_transform_type>;
+  using col_transform_type = typename transform_type::col_transform_type;
+  using col_transform_ptr_type =
+      typename transform_type::col_transform_ptr_type;
+  using make_col_ptr_type = MakePtrFunc<col_transform_type>;
+
+  constexpr std::string name() const {
+    std::stringstream ss;
+    ss << transform_type::name() << " power_iteration";
+    return ss.str();
+  }
+
+  bool in_bounds(const double ob_dist, const double sk_dist,
+                 const double epsilon) const {
+    return (sk_dist < (1 + epsilon) * ob_dist) &&
+           (sk_dist > (1 - epsilon) * ob_dist);
+  }
+
+  float spectral_norm(const Eigen::MatrixXf &matrix) const {
+    Eigen::JacobiSVD<Eigen::MatrixXf> svd(
+        matrix, Eigen::ComputeThinU | Eigen::ComputeThinV);
+    return svd.singularValues()(0);
+  }
+
+  void power_iteration_test(const Parameters &params,
+                            const int         transform_count) const {
+    make_ptr_type     _make_ptr     = make_ptr_type();
+    make_row_ptr_type _make_row_ptr = make_row_ptr_type();
+
+    srand(4);
+    const int       row_count = 256;
     const int       col_count = 256;
-    Eigen::MatrixXf matrix    = Eigen::MatrixXf::Random(col_count, col_count);
+    Eigen::MatrixXf matrix    = Eigen::MatrixXf::Random(row_count, col_count);
 
-    power_iteration_test(row_transform_ptr, transform_ptr, matrix, params);
+    std::vector<row_transform_ptr_type> single_transform_ptrs;
+    for (int i(0); i < transform_count; ++i) {
+      single_transform_ptrs.push_back(_make_row_ptr(params.seed + i));
+    }
+
+    Eigen::MatrixXf AS_matrix = sketch_cols(matrix, single_transform_ptrs[0]);
+
+    std::vector<transform_ptr_type> transform_ptrs;
+    for (int i(0); i < transform_count - 1; ++i) {
+      transform_ptrs.push_back(
+          _make_ptr(single_transform_ptrs[i], single_transform_ptrs[i + 1]));
+    }
+
+    std::vector<sketch_type> sketches;
+    for (const transform_ptr_type &transform_ptr : transform_ptrs) {
+      sketches.push_back(sketch_type{transform_ptr});
+    }
+
+    std::vector<Eigen::MatrixXf> STAR_matrices;
+    for (sketch_type &sketch : sketches) {
+      sketch_both(matrix, sketch);
+      STAR_matrices.push_back(sketch.scaled_registers());
+    }
+
+    Eigen::MatrixXf product_exact = matrix;
+    for (int i(0); i < sketches.size(); ++i) {
+      product_exact *= matrix;
+    }
+
+    Eigen::MatrixXf product_sketch = AS_matrix;
+    for (const Eigen::MatrixXf &operand : STAR_matrices) {
+      product_sketch *= operand;
+    }
+
+    double norm = matrix.squaredNorm() / std::pow(spectral_norm(matrix), 2);
+
+    // std::cout << "spectral norm: " << norm << std::endl;
+
+    double success_rate(0.0);
+    double empirical_epsilon(0.0);
+    double expected_epsilon = std::sqrt(
+        16 *
+        (norm + std::log(col_count * (transform_count - 1) *
+                         sketch_type::transform_type::replication_count())) /
+        params.range_size);
+    int trials(0);
+    for (int i(0); i < col_count; ++i) {
+      for (int j(i + 1); j < col_count; ++j) {
+        ++trials;
+        double dist_exact =
+            (product_exact.row(i) - product_exact.row(j)).lpNorm<2>();
+        double dist_sketch =
+            (product_sketch.row(i) - product_sketch.row(j)).lpNorm<2>();
+        double this_error = std::abs(1.0 - dist_sketch / dist_exact);
+        empirical_epsilon += this_error;
+        if (in_bounds(dist_exact, dist_sketch, expected_epsilon)) {
+          success_rate += 1.0;
+        }
+        // if (params.verbose && (i == 199) && (j == 230)) {
+        //   std::cout << "\t(" << i << "," << j << ") exact " << dist_exact
+        //             << ", sketched " << dist_sketch
+        //             << " (multiplicative error: 1 +/- " << this_error
+        //             << ") (in bounds: "
+        //             << in_bounds(dist_exact, dist_sketch, expected_epsilon)
+        //             << ")" << std::endl;
+        // }
+      }
+    }
+    success_rate /= trials;
+    empirical_epsilon /= trials;
+    bool row_dist_guarantee_success = success_rate > 0.5;
+    CHECK_CONDITION(row_dist_guarantee_success == true, "power iteration (",
+                    transform_count,
+                    " iterations) approximate row distances guarantee (",
+                    trials, " trials, ", success_rate,
+                    " success rate, expected epsilon=", expected_epsilon,
+                    ", mean empirical epsilon=", empirical_epsilon, ")");
+  }
+
+  void operator()(const Parameters &params) const {
+    power_iteration_test(params, 2);
+    power_iteration_test(params, 3);
+    power_iteration_test(params, 4);
+    power_iteration_test(params, 5);
   }
 };
 
@@ -840,6 +897,8 @@ void perform_tests(const Parameters &params) {
   do_test<bad_merge_check<sketch_type, MakePtrFunc>>(params);
   do_test<good_merge_check<sketch_type, MakePtrFunc>>(params);
   do_test<ingest_check<sketch_type, MakePtrFunc>>(params);
+  do_test<power_iteration_check<matrix::DoubleSparseJLT<128, 4>, MakePtrFunc>>(
+      params);
 #if __has_include(<cereal/cereal.hpp>)
   do_test<serialize_check<sketch_type, MakePtrFunc>>(params);
 #endif
