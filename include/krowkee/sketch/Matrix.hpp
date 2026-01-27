@@ -98,6 +98,18 @@ double mean_absolute_error(const Eigen::DenseBase<DerivedLHS> &lhs,
                            const Eigen::DenseBase<DerivedRHS> &rhs) {
   return (lhs.derived() - rhs.derived()).array().abs().sum() / lhs.size();
 }
+
+template <typename DerivedLHS, typename DerivedRHS>
+double max_absolute_error(const Eigen::DenseBase<DerivedLHS> &lhs,
+                          const Eigen::DenseBase<DerivedRHS> &rhs) {
+  return (lhs.derived() - rhs.derived()).cwiseAbs().maxCoeff();
+}
+
+template <typename DerivedLHS, typename DerivedRHS>
+double min_absolute_error(const Eigen::DenseBase<DerivedLHS> &lhs,
+                          const Eigen::DenseBase<DerivedRHS> &rhs) {
+  return (lhs.derived() - rhs.derived()).cwiseAbs().minCoeff();
+}
 }  // namespace krowkee::sketch::detail
 namespace krowkee {
 namespace sketch {
