@@ -94,6 +94,12 @@ int main(int argc, char **argv) {
         single_transform_ptrs[i], single_transform_ptrs[i + 1]));
   }
 
+  for (const double_transform_ptr_type &transform : double_transform_ptrs) {
+    std::cout << transform->full_name() << ", seed: " << transform->seed()
+              << std::endl;
+  }
+  std::cout << std::endl;
+
   // We create a `std::map` that will hold the AS embeddings for each row of A.
   // Initialize each such row to be an empty sketch using the zeroth transform.
   std::vector<sketch_type> single_sketches;
@@ -115,6 +121,14 @@ int main(int argc, char **argv) {
   srand(seed);
   static Eigen::MatrixXf matrix_A =
       Eigen::MatrixXf::Random(row_count, col_count);
+  // We compute the exact power iteration product.
+  Eigen::MatrixXf product_exact = matrix_A;
+  for (int i(0); i < transform_count; ++i) {
+    product_exact *= matrix_A;
+  }
+  std::cout << "A(5,7) = " << matrix_A(5, 7) << std::endl;
+  std::cout << "A^" << transform_count << "(5,7) = " << product_exact(5, 7)
+            << std::endl;
 
   // We apply both the single and double sketches to each element of `matrix_A`
   // in a single pass.
@@ -161,14 +175,6 @@ int main(int argc, char **argv) {
   for (int i(0); i < double_matrices.size(); ++i) {
     product_iterative *= matrix_A;
   }
-
-  // We compute the exact power iteration product.
-  Eigen::MatrixXf product_exact = matrix_A;
-  for (int i(0); i < double_matrices.size(); ++i) {
-    product_exact *= matrix_A;
-  }
-  std::cout << "A(5,7) = " << matrix_A(5, 7) << std::endl;
-  std::cout << "A^2(5,7) = " << product_exact(5, 7) << std::endl;
 
   // We now compare the embedding vectors. In practice this could be done more
   // efficiently, but this implementation suffices for illustration.
