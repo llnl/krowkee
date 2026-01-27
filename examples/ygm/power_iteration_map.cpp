@@ -76,8 +76,8 @@ int main(int argc, char **argv) {
     //      of instances of the transform to be used, and
     //   4. a shared pointer type to be used by the shared transform object
     //      (`ygm::ygm_ptr` for shared memory implementations).
-    constexpr const std::size_t range_size        = 4;
-    constexpr const std::size_t replication_count = 1;
+    constexpr const std::size_t range_size        = 128;
+    constexpr const std::size_t replication_count = 4;
     constexpr const std::size_t embedding_size = range_size * replication_count;
     using register_type                        = double;
     using sketch_type =
@@ -130,7 +130,7 @@ int main(int argc, char **argv) {
     for (const double_transform_ptr_type &transform : double_transform_ptrs) {
       world.cout0(transform->full_name(), ", seed: ", transform->seed());
     }
-    world.cout0("\n");
+    world.cout0("");
 
     // We create a `ygm::container::map` that will hold the AS embeddings for
     // each of our sketches. We also create an empty sketch using our transform
@@ -160,6 +160,7 @@ int main(int argc, char **argv) {
     double srank = stable_rank(product_exact);
     world.cout0("A(5,7) = ", matrix_A(5, 7));
     world.cout0("A^", transform_count, "(5,7) = ", product_exact(5, 7));
+    world.cout0("");
 
     // We will now simulate asynchronously updates to the associated sketch by
     // communicating elements of the matrix using YGM. In this example each
@@ -241,6 +242,7 @@ int main(int argc, char **argv) {
                   krowkee::sketch::detail::mean_absolute_error(
                       double_matrices[i], double_matrices_check[i]));
     }
+    world.cout0("");
 
     // multiply the (small) matrix sketches in-place so that everyone can access
     // the power iteration linear operator.
@@ -263,6 +265,7 @@ int main(int argc, char **argv) {
                 ", mae: ",
                 krowkee::sketch::detail::mean_absolute_error(
                     partial_product_sketch, partial_product_sketch_check));
+    world.cout0("");
 
     // We prepare a datastructure to hold the scaled embeddings once all
     // sketches have accumulated. This is currently required, but the
@@ -278,7 +281,15 @@ int main(int argc, char **argv) {
         embedding(static_cast<Eigen::Index>(i)) =
             static_cast<double>(scaled_registers[i]);
       }
+      // if (idx == 0) {
+      //   std::cout << "embedding before: " << std::endl
+      //             << embedding << std::endl;
+      // }
       embedding *= partial_product_sketch;
+      // if (idx == 0) {
+      //   std::cout << "embedding after: " << std::endl << embedding <<
+      //   std::endl;
+      // }
       embeddings.async_insert(idx, embedding);
     });
     world.barrier();
@@ -291,94 +302,173 @@ int main(int argc, char **argv) {
       }
     }
 
-    bool   sketches_match = true;
-    double mae(0.0);
-    double max_error(0.0);
-    sketch_map.for_all([&world, &sketch_check, &sketches_match, &mae,
-                        &max_error](const int idx, sketch_type &sketch) {
-      double this_mae =
-          mean_absolute_error(sketch.container().registers(),
-                              sketch_check[idx].container().registers());
-      if (this_mae >= 1e-5) {
-        sketches_match = false;
-      }
-      mae += this_mae;
-      max_error = std::max(this_mae, max_error);
-    });
+    bool   one_sided_match = true;
+    double one_sided_mae(0.0);
+    double one_sided_max_error(0.0);
+    sketch_map.for_all(
+        [&world, &sketch_check, &one_sided_match, &one_sided_mae,
+         &one_sided_max_error](const int idx, sketch_type &sketch) {
+          double this_mae =
+              mean_absolute_error(sketch.container().registers(),
+                                  sketch_check[idx].container().registers());
+          if (this_mae >= 1e-5) {
+            one_sided_match = false;
+          }
+          one_sided_mae += this_mae;
+          one_sided_max_error = std::max(this_mae, one_sided_max_error);
+        });
     world.barrier();
 
-    sketches_match = ygm::min(sketches_match, world);
-    mae            = ygm::sum(mae, world) / sketch_map.size();
-    max_error      = ygm::max(max_error, world);
+    one_sided_match     = ygm::min(one_sided_match, world);
+    one_sided_mae       = ygm::sum(one_sided_mae, world) / sketch_map.size();
+    one_sided_max_error = ygm::max(one_sided_max_error, world);
 
-    world.cout0("One sided sketches match? ", sketches_match, ", mae: ", mae,
-                ", max_error: ", max_error);
+    world.cout0("One sided sketches match? ", one_sided_match,
+                ", mae: ", one_sided_mae, ", max_error: ", one_sided_max_error);
+    world.cout0("");
 
-    // // We now compare the embedding vectors. In practice this could be done
-    // more
-    // // efficiently, but this implementation suffices for illustration.
-    // static double       success_rate_streaming(0.0);
-    // static double       epsilon_streaming(0.0);
+    // replicate embedding production for consistency.
+    std::vector<Eigen::VectorXd> embeddings_check;
+    for (int i(0); i < row_count; ++i) {
+      std::vector<register_type> sketch = sketch_check[i].scaled_registers();
+      Eigen::VectorXd embedding         = Eigen::VectorXd::Zero(sketch.size());
+      for (int j(0); j < sketch.size(); ++j) {
+        embedding[j] = sketch[j];
+      }
+      embedding *= partial_product_sketch_check;
+      embeddings_check.push_back(embedding);
+    }
+
+    bool   embeddings_match = true;
+    double embeddings_mae(0.0);
+    double embeddings_max_error(0.0);
+    embeddings.for_all(
+        [&world, &embeddings_check, &embeddings_match, &embeddings_mae,
+         &embeddings_max_error](const int idx, Eigen::VectorXd &embedding) {
+          // if (idx == 0) {
+          //   std::cout << "embedding: " << std::endl << embedding <<
+          //   std::endl; std::cout << "check: " << std::endl
+          //             << embeddings_check[idx] << std::endl;
+          // }
+          double this_mae = (embedding - embeddings_check[idx]).lpNorm<1>();
+          if (this_mae >= 1e-5) {
+            embeddings_match = false;
+          }
+          embeddings_mae += this_mae;
+          embeddings_max_error = std::max(this_mae, embeddings_max_error);
+        });
+    world.barrier();
+
+    embeddings_match     = ygm::min(embeddings_match, world);
+    embeddings_mae       = ygm::sum(embeddings_mae, world) / embeddings.size();
+    embeddings_max_error = ygm::max(embeddings_max_error, world);
+
+    world.cout0("Embedding sketches match? ", embeddings_match,
+                ", mae: ", embeddings_mae,
+                ", max_error: ", embeddings_max_error);
+    world.cout0("");
+
+    // We now verify that the embedding vectors satisfy the guarantees
+    double              success_rate_streaming_check(0.0);
+    double              epsilon_streaming_check(0.0);
+    const static double epsilon_expected =
+        std::sqrt(16 * std::log(col_count) * srank / (range_size * range_size));
+    int trials_check(0);
+
+    for (int i(0); i < row_count; ++i) {
+      for (int j(0); j < i; ++j) {
+        ++trials_check;
+        double dist_exact =
+            (product_exact.row(i) - product_exact.row(j)).lpNorm<2>();
+        double dist_streaming =
+            (embeddings_check[i] - embeddings_check[j]).lpNorm<2>();
+        double error_streaming = std::abs(1.0 - dist_streaming / dist_exact);
+        epsilon_streaming_check += error_streaming;
+        if (in_bounds(dist_exact, dist_streaming, epsilon_expected)) {
+          success_rate_streaming_check += 1.0;
+        }
+      }
+    }
+
+    success_rate_streaming_check /= trials_check;
+    epsilon_streaming_check /= trials_check;
+
+    world.cout0("local power iteration approximate row distances guarantee (",
+                trials_check, " trials)");
+    world.cout0("\tstreaming success rate / epsilon / expected = (",
+                success_rate_streaming_check, ", ", epsilon_streaming_check,
+                ", ", epsilon_expected, ")");
+    world.cout0("");
+
+    // We now compare the embedding vectors. In practice this could be done more
+    // efficiently, but this implementation suffices for illustration.
+    static double success_rate_streaming(0.0);
+    static double epsilon_streaming(0.0);
     // const static double epsilon_expected =
     //     std::sqrt(16 * std::log(col_count) * srank / (range_size *
     //     range_size));
-    // static int trials(0);
+    static int trials(0);
 
-    // embeddings.for_all([&embeddings](const int              lhs_idx,
-    //                                  const Eigen::VectorXd &lhs_embedding) {
-    //   for (int rhs_idx(lhs_idx + 1); rhs_idx < row_count; ++rhs_idx) {
-    //     embeddings.async_visit(
-    //         rhs_idx,
-    //         [](const int rhs_idx, const Eigen::VectorXd &rhs_embedding,
-    //            const int lhs_idx, const Eigen::VectorXd &lhs_embedding) {
-    //           ++trials;
-    //           double dist_exact =
-    //               (product_exact.row(lhs_idx) - product_exact.row(rhs_idx))
-    //                   .lpNorm<2>();
-    //           double dist_streaming =
-    //               (lhs_embedding - rhs_embedding).lpNorm<2>();
-    //           double error_streaming =
-    //               std::abs(1.0 - dist_streaming / dist_exact);
-    //           epsilon_streaming += error_streaming;
-    //           if (in_bounds(dist_exact, dist_streaming, epsilon_expected)) {
-    //             success_rate_streaming += 1.0;
-    //           }
-    //           if (lhs_idx == 199 && rhs_idx == 230) {
-    //             std::cout << "\t(" << lhs_idx << "," << rhs_idx << ") exact "
-    //                       << dist_exact
-    //                       << "\n\t\tstreaming (dist/error/success): ("
-    //                       << dist_streaming << ", 1 +/- " << error_streaming
-    //                       << ", "
-    //                       << in_bounds(dist_exact, dist_streaming,
-    //                                    epsilon_expected)
-    //                       // << ")\n\t\titerative (dist/error/success): ("
-    //                       // << dist_iterative << ", 1 +/- " <<
-    //                       error_iterative
-    //                       // << ", "
-    //                       // << in_bounds(dist_exact, dist_iterative,
-    //                       //              epsilon_expected)
-    //                       << ")" << std::endl;
-    //           }
-    //         },
-    //         lhs_idx, lhs_embedding);
-    //   }
-    // });
-    // world.barrier();
+    embeddings.for_all([&embeddings](const int              lhs_idx,
+                                     const Eigen::VectorXd &lhs_embedding) {
+      for (int rhs_idx(lhs_idx + 1); rhs_idx < row_count; ++rhs_idx) {
+        embeddings.async_visit(
+            rhs_idx,
+            [](const int rhs_idx, const Eigen::VectorXd &rhs_embedding,
+               const int lhs_idx, const Eigen::VectorXd &lhs_embedding) {
+              ++trials;
+              double dist_exact =
+                  (product_exact.row(lhs_idx) - product_exact.row(rhs_idx))
+                      .lpNorm<2>();
+              double dist_streaming =
+                  (lhs_embedding - rhs_embedding).lpNorm<2>();
+              double error_streaming =
+                  std::abs(1.0 - dist_streaming / dist_exact);
+              epsilon_streaming += error_streaming;
+              if (in_bounds(dist_exact, dist_streaming, epsilon_expected)) {
+                success_rate_streaming += 1.0;
+              }
+              if (lhs_idx == 199 && rhs_idx == 230) {
+                // std::cout << "\tlhs_embedding:" << std::endl;
+                // std::cout << lhs_embedding << std::endl;
+                // std::cout << "\trhs_embedding:" << std::endl;
+                // std::cout << rhs_embedding << std::endl;
+                std::cout << "\t(" << lhs_idx << "," << rhs_idx << ") exact "
+                          << dist_exact
+                          << "\n\t\tstreaming (dist/error/success): ("
+                          << dist_streaming << ", 1 +/- " << error_streaming
+                          << ", "
+                          << in_bounds(dist_exact, dist_streaming,
+                                       epsilon_expected)
+                          // << ")\n\t\titerative (dist/error/success): ("
+                          // << dist_iterative << ", 1 +/- " << error_iterative
+                          // << ", "
+                          // << in_bounds(dist_exact, dist_iterative,
+                          //              epsilon_expected)
+                          << ")" << std::endl;
+              }
+            },
+            lhs_idx, lhs_embedding);
+      }
+    });
+    world.barrier();
 
-    // success_rate_streaming = ygm::sum(success_rate_streaming, world);
-    // epsilon_streaming      = ygm::sum(epsilon_streaming, world);
-    // trials                 = ygm::sum(trials, world);
-    // success_rate_streaming /= trials;
-    // epsilon_streaming /= trials;
+    success_rate_streaming = ygm::sum(success_rate_streaming, world);
+    epsilon_streaming      = ygm::sum(epsilon_streaming, world);
+    trials                 = ygm::sum(trials, world);
+    success_rate_streaming /= trials;
+    epsilon_streaming /= trials;
 
     // world.cout0("\npower iteration approximate row distances guarantee (",
     //             trials, " trials), success rate = ", success_rate_streaming,
     //             ", expected epsilon = ", epsilon_expected,
     //             ", mean empirical epsilon = ", epsilon_streaming);
-    // world.cout0("\npower iteration approximate row distances guarantee (",
-    //             trials, " trials)");
-    // world.cout0("\tstreaming success rate / epsilon = (",
-    //             success_rate_streaming, ", ", epsilon_streaming, ")");
+    world.cout0(
+        "\ndistributed power iteration approximate row distances guarantee (",
+        trials, " trials)");
+    world.cout0("\tstreaming success rate / epsilon / expected = (",
+                success_rate_streaming, ", ", epsilon_streaming, ", ",
+                epsilon_expected, ")");
   }
 
   return 0;
