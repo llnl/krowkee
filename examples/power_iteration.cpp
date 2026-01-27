@@ -12,13 +12,13 @@
 #include <random>
 #include <type_traits>
 
-float spectral_norm(const Eigen::MatrixXf &matrix) {
-  Eigen::JacobiSVD<Eigen::MatrixXf> svd(
+double spectral_norm(const Eigen::MatrixXd &matrix) {
+  Eigen::JacobiSVD<Eigen::MatrixXd> svd(
       matrix, Eigen::ComputeThinU | Eigen::ComputeThinV);
   return svd.singularValues()(0);
 }
 
-float stable_rank(const Eigen::MatrixXf &matrix) {
+double stable_rank(const Eigen::MatrixXd &matrix) {
   return matrix.squaredNorm() / std::pow(spectral_norm(matrix), 2);
 }
 
@@ -38,7 +38,7 @@ int main(int argc, char **argv) {
   // `double_sketch_type`, respectively. We use the `SparseJLT` and
   // `DoubleSparseJLT` types defined in the simple API in
   // `krowkee/sketch.hpp`. These types have four template parameters:
-  //   1. the numeric type to be used by each register (here `float`),
+  //   1. the numeric type to be used by each register (here `double`),
   //   2. a `std::size_t` parameter `range_size` indicating the number of
   //      registers used by each instance of the internal transform,
   //   3. a `std::size_t` parameter `replication_count` indicating the number
@@ -48,7 +48,7 @@ int main(int argc, char **argv) {
   constexpr const std::size_t range_size        = 128;
   constexpr const std::size_t replication_count = 4;
   constexpr const std::size_t embedding_size = range_size * replication_count;
-  using register_type                        = float;
+  using register_type                        = double;
   using sketch_type =
       krowkee::sketch::SparseJLT<register_type, range_size, replication_count,
                                  std::shared_ptr>;
@@ -94,12 +94,6 @@ int main(int argc, char **argv) {
         single_transform_ptrs[i], single_transform_ptrs[i + 1]));
   }
 
-  for (const double_transform_ptr_type &transform : double_transform_ptrs) {
-    std::cout << transform->full_name() << ", seed: " << transform->seed()
-              << std::endl;
-  }
-  std::cout << std::endl;
-
   // We create a `std::map` that will hold the AS embeddings for each row of A.
   // Initialize each such row to be an empty sketch using the zeroth transform.
   std::vector<sketch_type> single_sketches;
@@ -119,16 +113,8 @@ int main(int argc, char **argv) {
   // efficiently, as this is a toy example and we will compute a ground
   // truth solution that is intractable for large matrices.
   srand(seed);
-  static Eigen::MatrixXf matrix_A =
-      Eigen::MatrixXf::Random(row_count, col_count);
-  // We compute the exact power iteration product.
-  Eigen::MatrixXf product_exact = matrix_A;
-  for (int i(0); i < transform_count; ++i) {
-    product_exact *= matrix_A;
-  }
-  std::cout << "A(5,7) = " << matrix_A(5, 7) << std::endl;
-  std::cout << "A^" << transform_count << "(5,7) = " << product_exact(5, 7)
-            << std::endl;
+  static Eigen::MatrixXd matrix_A =
+      Eigen::MatrixXd::Random(row_count, col_count);
 
   // We apply both the single and double sketches to each element of `matrix_A`
   // in a single pass.
@@ -149,7 +135,7 @@ int main(int argc, char **argv) {
   }
 
   // We dump the contents of the AS embedding to an Eigen matrix.
-  Eigen::MatrixXf matrix_AS = Eigen::MatrixXf::Zero(row_count, embedding_size);
+  Eigen::MatrixXd matrix_AS = Eigen::MatrixXd::Zero(row_count, embedding_size);
   for (int i(0); i < row_count; ++i) {
     std::vector<register_type> embedding =
         single_sketches[i].scaled_registers();
@@ -159,30 +145,38 @@ int main(int argc, char **argv) {
   }
 
   // We dump the contents of the S^tAR embeddings to Eigen matrices.
-  std::vector<Eigen::MatrixXf> double_matrices;
+  std::vector<Eigen::MatrixXd> double_matrices;
   for (const double_sketch_type &double_sketch : double_sketches) {
     double_matrices.push_back(double_sketch.scaled_registers());
   }
 
   // We compute the streaming power iteration product.
-  Eigen::MatrixXf product_streaming = matrix_AS;
+  Eigen::MatrixXd product_streaming = matrix_AS;
   for (int i(0); i < double_matrices.size(); ++i) {
     product_streaming *= double_matrices[i];
   }
 
   // We compute the iterative power iteration product.
-  Eigen::MatrixXf product_iterative = matrix_AS;
+  Eigen::MatrixXd product_iterative = matrix_AS;
   for (int i(0); i < double_matrices.size(); ++i) {
     product_iterative *= matrix_A;
   }
 
+  // We compute the exact power iteration product.
+  Eigen::MatrixXd product_exact = matrix_A;
+  for (int i(0); i < double_matrices.size(); ++i) {
+    product_exact *= matrix_A;
+  }
+  std::cout << "A(5,7) = " << matrix_A(5, 7) << std::endl;
+  std::cout << "A^2(5,7) = " << product_exact(5, 7) << std::endl;
+
   // We now compare the embedding vectors. In practice this could be done more
   // efficiently, but this implementation suffices for illustration.
-  double      success_rate_streaming(0.0);
-  double      success_rate_iterative(0.0);
-  double      epsilon_streaming(0.0);
-  double      epsilon_iterative(0.0);
-  const float srank = stable_rank(matrix_A);
+  double       success_rate_streaming(0.0);
+  double       success_rate_iterative(0.0);
+  double       epsilon_streaming(0.0);
+  double       epsilon_iterative(0.0);
+  const double srank = stable_rank(matrix_A);
   // :math:`\sqrt{2} \left ( (1 + 2\varepsilon)^{r - 1} \right ) \|A\|^r_{op}`.
   const double epsilon_expected = std::sqrt(
       16 *
