@@ -15,13 +15,13 @@
 #include <random>
 #include <type_traits>
 
-float spectral_norm(const Eigen::MatrixXf &matrix) {
-  Eigen::JacobiSVD<Eigen::MatrixXf> svd(
+double spectral_norm(const Eigen::MatrixXd &matrix) {
+  Eigen::JacobiSVD<Eigen::MatrixXd> svd(
       matrix, Eigen::ComputeThinU | Eigen::ComputeThinV);
   return svd.singularValues()(0);
 }
 
-float stable_rank(const Eigen::MatrixXf &matrix) {
+double stable_rank(const Eigen::MatrixXd &matrix) {
   return matrix.squaredNorm() / std::pow(spectral_norm(matrix), 2);
 }
 
@@ -69,7 +69,7 @@ int main(int argc, char **argv) {
     // `double_sketch_type`, respectively. We use the `SparseJLT` and
     // `DoubleSparseJLT` types defined in the simple API in
     // `krowkee/sketch.hpp`. These types have four template parameters:
-    //   1. the numeric type to be used by each register (here `float`),
+    //   1. the numeric type to be used by each register (here `double`),
     //   2. a `std::size_t` parameter `range_size` indicating the number of
     //      registers used by each instance of the internal transform,
     //   3. a `std::size_t` parameter `replication_count` indicating the number
@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
     constexpr const std::size_t range_size        = 4;
     constexpr const std::size_t replication_count = 1;
     constexpr const std::size_t embedding_size = range_size * replication_count;
-    using register_type                        = float;
+    using register_type                        = double;
     using sketch_type =
         krowkee::sketch::SparseJLT<register_type, range_size, replication_count,
                                    ygm::ygm_ptr>;
@@ -149,15 +149,15 @@ int main(int argc, char **argv) {
     // We sample a random matrix to embed. Note that this is not implemented
     // efficiently, as this is a toy example and we will compute a ground
     // truth solution that is intractable for large matrices.
-    static Eigen::MatrixXf matrix_A =
-        Eigen::MatrixXf::Random(row_count, col_count);
+    static Eigen::MatrixXd matrix_A =
+        Eigen::MatrixXd::Random(row_count, col_count);
 
     // We compute the ground truth power iteration of the matrix.
-    static Eigen::MatrixXf product_exact = matrix_A;
+    static Eigen::MatrixXd product_exact = matrix_A;
     for (int i(1); i < transform_count; ++i) {
       product_exact *= matrix_A;
     }
-    float srank = stable_rank(product_exact);
+    double srank = stable_rank(product_exact);
     world.cout0("A(5,7) = ", matrix_A(5, 7));
     world.cout0("A^", transform_count, "(5,7) = ", product_exact(5, 7));
 
@@ -173,7 +173,7 @@ int main(int argc, char **argv) {
           // go to the appropriate single sketch on the appropriate rank,
           // simultaneously updating all two-sided sketches.
           auto insert_lambda = [](const int &row_idx, sketch_type &sketch,
-                                  const int &col_idx, const float update) {
+                                  const int &col_idx, const double update) {
             // insert `(col_idx) <- update` into a sketch vector associated
             // with row_idx.
             sketch.insert(col_idx, update);
@@ -192,23 +192,23 @@ int main(int argc, char **argv) {
 
     // We produce scaled embeddings for the matrix sketches and allreduce them
     // to put all updates in one place.
-    std::vector<Eigen::MatrixXf> double_matrices;
+    std::vector<Eigen::MatrixXd> double_matrices;
     for (int i(0); i < double_sketches.size(); ++i) {
       // using a const reference to avoid an extra copy
-      const Eigen::MatrixXf &double_matrix =
+      const Eigen::MatrixXd &double_matrix =
           double_sketches[i].container().registers();
       // it is very important that the dummy matrix have the the correct shapes!
       double_matrices.push_back(
-          Eigen::MatrixXf::Zero(embedding_size, embedding_size));
+          Eigen::MatrixXd::Zero(embedding_size, embedding_size));
       YGM_ASSERT_MPI(MPI_Allreduce(
           double_matrix.data(), double_matrices[i].data(),
-          embedding_size * embedding_size, ygm::detail::mpi_typeof(float()),
+          embedding_size * embedding_size, ygm::detail::mpi_typeof(double()),
           MPI_SUM, world.get_mpi_comm()));
       world.barrier();
     }
 
     // apply scaling factor
-    for (Eigen::MatrixXf &double_matrix : double_matrices) {
+    for (Eigen::MatrixXd &double_matrix : double_matrices) {
       double_matrix /= double_transform_type::scaling_factor;
     }
 
@@ -225,7 +225,7 @@ int main(int argc, char **argv) {
         }
       }
     }
-    std::vector<Eigen::MatrixXf> double_matrices_check;
+    std::vector<Eigen::MatrixXd> double_matrices_check;
     for (const double_sketch_type &double_sketch : double_sketches_check) {
       double_matrices_check.push_back(double_sketch.scaled_registers());
     }
@@ -244,12 +244,12 @@ int main(int argc, char **argv) {
 
     // multiply the (small) matrix sketches in-place so that everyone can access
     // the power iteration linear operator.
-    Eigen::MatrixXf partial_product_sketch = double_matrices[0];
+    Eigen::MatrixXd partial_product_sketch = double_matrices[0];
     for (int i(1); i < double_matrices.size(); ++i) {
       partial_product_sketch *= double_matrices[i];
     }
 
-    Eigen::MatrixXf partial_product_sketch_check = double_matrices_check[0];
+    Eigen::MatrixXd partial_product_sketch_check = double_matrices_check[0];
     for (int i(1); i < double_matrices_check.size(); ++i) {
       partial_product_sketch_check *= double_matrices_check[i];
     }
@@ -268,15 +268,15 @@ int main(int argc, char **argv) {
     // sketches have accumulated. This is currently required, but the
     // sketches may perform scaling on insertion in a future version, in
     // which case this step is no longer necessary.
-    ygm::container::map<int, Eigen::VectorXf> embeddings(world);
+    ygm::container::map<int, Eigen::VectorXd> embeddings(world);
 
     sketch_map.for_all([&embeddings, &partial_product_sketch](
                            const int idx, const sketch_type &sketch) {
-      Eigen::VectorXf embedding(sketch.size());
+      Eigen::VectorXd embedding(sketch.size());
       auto            scaled_registers = sketch.scaled_registers();
       for (std::size_t i(0); i < scaled_registers.size(); ++i) {
         embedding(static_cast<Eigen::Index>(i)) =
-            static_cast<float>(scaled_registers[i]);
+            static_cast<double>(scaled_registers[i]);
       }
       embedding *= partial_product_sketch;
       embeddings.async_insert(idx, embedding);
@@ -325,12 +325,12 @@ int main(int argc, char **argv) {
     // static int trials(0);
 
     // embeddings.for_all([&embeddings](const int              lhs_idx,
-    //                                  const Eigen::VectorXf &lhs_embedding) {
+    //                                  const Eigen::VectorXd &lhs_embedding) {
     //   for (int rhs_idx(lhs_idx + 1); rhs_idx < row_count; ++rhs_idx) {
     //     embeddings.async_visit(
     //         rhs_idx,
-    //         [](const int rhs_idx, const Eigen::VectorXf &rhs_embedding,
-    //            const int lhs_idx, const Eigen::VectorXf &lhs_embedding) {
+    //         [](const int rhs_idx, const Eigen::VectorXd &rhs_embedding,
+    //            const int lhs_idx, const Eigen::VectorXd &lhs_embedding) {
     //           ++trials;
     //           double dist_exact =
     //               (product_exact.row(lhs_idx) - product_exact.row(rhs_idx))
