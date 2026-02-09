@@ -39,16 +39,16 @@ void serial_accumulate(
     std::vector<Eigen::MatrixXd> &serial_double_matrices) {
   // We create a `std::map` that will hold the AS embeddings for each row of A.
   // Initialize each such row to be an empty sketch using the zeroth transform.
-  std::vector<SingleSketchType> single_sketches;
+  std::vector<SingleSketchType> serial_single_sketches;
   for (int i(0); i < matrix_A.rows(); ++i) {
-    single_sketches.emplace_back(single_transform_ptr);
+    serial_single_sketches.emplace_back(single_transform_ptr);
   }
 
   // We also create a vector of local double-sided sketches that will hold the
   // double sided embeddings.
-  std::vector<DoubleSketchType> double_sketches;
+  std::vector<DoubleSketchType> serial_double_sketches;
   for (const auto &double_transform_ptr : double_transform_ptrs) {
-    double_sketches.emplace_back(double_transform_ptr);
+    serial_double_sketches.emplace_back(double_transform_ptr);
   }
 
   // We apply both the single and double sketches to each element of `matrix_A`
@@ -58,8 +58,8 @@ void serial_accumulate(
     int j(0);
     for (const auto &element : row) {
       // insert `(j, element)` into the `i`th row sketch of `AS`
-      single_sketches[i].insert(j, element);
-      for (DoubleSketchType &double_sketch : double_sketches) {
+      serial_single_sketches[i].insert(j, element);
+      for (DoubleSketchType &double_sketch : serial_double_sketches) {
         // insert `((i, j), element)` into each double sketch of the form
         // `S^tAR`
         double_sketch.insert({i, j}, element);
@@ -70,17 +70,92 @@ void serial_accumulate(
   }
 
   // We dump the contents of the AS embedding to an Eigen matrix.
-  for (int i(0); i < single_sketches.size(); ++i) {
-    auto embedding = single_sketches[i].scaled_registers();
+  for (int i(0); i < serial_single_sketches.size(); ++i) {
+    auto embedding = serial_single_sketches[i].scaled_registers();
     for (int j(0); j < embedding.size(); ++j) {
       serial_matrix_AS(i, j) = embedding[j];
     }
   }
 
   // We dump the contents of the S^tAR embeddings to Eigen matrices.
-  for (const DoubleSketchType &double_sketch : double_sketches) {
+  for (const DoubleSketchType &double_sketch : serial_double_sketches) {
     serial_double_matrices.push_back(double_sketch.scaled_registers());
   }
+}
+
+template <typename SingleSketchType, typename DoubleSketchType>
+void parallel_accumulate(
+    ygm::comm &comm, const Eigen::MatrixXd &matrix_A,
+    typename SingleSketchType::transform_ptr_type &single_transform_ptr,
+    std::vector<typename DoubleSketchType::transform_ptr_type>
+                                              &double_transform_ptrs,
+    ygm::container::map<int, Eigen::VectorXd> &parallel_matrix_AS,
+    std::vector<Eigen::MatrixXd>              &parallel_double_matrices) {
+  using single_sketch_type = SingleSketchType;
+
+  // We create a ygm::map that will hold the sketches for each row of A.
+  single_sketch_type default_sketch(single_transform_ptr);
+  ygm::container::map<int, single_sketch_type> single_sketches(comm,
+                                                               default_sketch);
+
+  for (int col_idx(0); col_idx < matrix_A.cols(); ++col_idx) {
+    if (comm.rank() == (col_idx % comm.size())) {
+      for (int row_idx(0); row_idx < matrix_A.rows(); ++row_idx) {
+        auto insert_lambda = [](const int row_idx, single_sketch_type &sketch,
+                                const int col_idx, const double update) {
+          sketch.insert(col_idx, update);
+        };
+        single_sketches.async_visit(row_idx, insert_lambda, col_idx,
+                                    matrix_A(row_idx, col_idx));
+      }
+    }
+  }
+  comm.barrier();
+
+  // Eigen::VectorXd default_embedding = Eigen::VectorXd::Zero(matrix_A.cols());
+  // ygm::container::map<int, Eigen::VectorXd> parallel_matrix_AS(
+  //     comm, default_embedding);
+
+  single_sketches.for_all(
+      [&parallel_matrix_AS](const int idx, const single_sketch_type &sketch) {
+        Eigen::VectorXd embedding(sketch.size());
+        auto            scaled_registers = sketch.scaled_registers();
+        for (int i(0); i < scaled_registers.size(); ++i) {
+          embedding(static_cast<Eigen::Index>(i)) =
+              static_cast<double>(scaled_registers[i]);
+        }
+        parallel_matrix_AS.async_insert(idx, embedding);
+      });
+  comm.barrier();
+}
+
+void agreement_accumulation(
+    const ygm::container::map<int, Eigen::VectorXd> &parallel_matrix_AS,
+    const Eigen::MatrixXd                           &serial_matrix_AS) {
+  ygm::comm &comm  = parallel_matrix_AS.comm();
+  bool       match = true;
+  double     mae(0.0);
+  double     max_error(0.0);
+  parallel_matrix_AS.for_all(
+      [&serial_matrix_AS, &match, &mae, &max_error](
+          const int idx, const Eigen::VectorXd &embedding) {
+        double this_mae = krowkee::sketch::detail::mean_absolute_error(
+            embedding, serial_matrix_AS(idx, Eigen::all));
+        if (this_mae >= 1.e-5) {
+          match = false;
+        }
+        mae += this_mae;
+        max_error = std::max(this_mae, max_error);
+      });
+  comm.barrier();
+
+  match     = ygm::min(match, comm);
+  mae       = ygm::sum(mae, comm) / serial_matrix_AS.rows();
+  max_error = ygm::max(max_error, comm);
+
+  comm.cout0("\tOne sided sketches match? ", match, ", mae: ", mae,
+             ", max_error: ", max_error);
+  comm.cout0("");
 }
 
 void serial_multiplication(
@@ -251,6 +326,14 @@ int main(int argc, char **argv) {
     serial_accumulate<single_sketch_type, double_sketch_type>(
         matrix_A, single_transform_ptrs[0], double_transform_ptrs,
         serial_matrix_AS, serial_double_matrices);
+
+    ygm::container::map<int, Eigen::VectorXd> parallel_matrix_AS(world);
+    std::vector<Eigen::MatrixXd>              parallel_double_matrices;
+    parallel_accumulate<single_sketch_type, double_sketch_type>(
+        world, matrix_A, single_transform_ptrs[0], double_transform_ptrs,
+        parallel_matrix_AS, parallel_double_matrices);
+
+    agreement_accumulation(parallel_matrix_AS, serial_matrix_AS);
 
     // We compute the serial power iteration products.
     Eigen::MatrixXd product_exact, product_streaming, product_iterative;
