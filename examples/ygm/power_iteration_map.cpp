@@ -371,8 +371,11 @@ int main(int argc, char **argv) {
     // We now verify that the embedding vectors satisfy the guarantees
     double              success_rate_streaming_check(0.0);
     double              epsilon_streaming_check(0.0);
-    const static double epsilon_expected =
-        std::sqrt(16 * std::log(col_count) * srank / (range_size * range_size));
+    const static double epsilon_expected = std::sqrt(
+        16 *
+        (srank + std::log((transform_count - 1) *
+                          sketch_type::transform_type::replication_count())) /
+        range_size);
     int trials_check(0);
 
     for (int i(0); i < row_count; ++i) {

@@ -227,12 +227,12 @@ int main(int argc, char **argv) {
 
   std::cout << "\npower iteration approximate row distances guarantee ("
             << trials << " trials)" << std::endl;
-  std::cout << "\tstreaming success rate / epsilon = ("
-            << success_rate_streaming << ", " << epsilon_streaming << ")"
-            << std::endl;
-  std::cout << "\titerative success rate / epsilon = ("
-            << success_rate_iterative << ", " << epsilon_iterative << ")"
-            << std::endl
+  std::cout << "\tstreaming success rate / epsilon / expected = ("
+            << success_rate_streaming << ", " << epsilon_streaming << ","
+            << epsilon_expected << ")" << std::endl;
+  std::cout << "\titerative success rate / epsilon / expected = ("
+            << success_rate_iterative << ", " << epsilon_iterative << ","
+            << epsilon_expected << ")" << std::endl
             << std::endl;
 
   return 0;
