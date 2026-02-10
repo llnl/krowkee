@@ -129,24 +129,25 @@ void parallel_accumulate(
   comm.barrier();
 }
 
-void agreement_accumulation(
-    const ygm::container::map<int, Eigen::VectorXd> &parallel_matrix_AS,
-    const Eigen::MatrixXd                           &serial_matrix_AS) {
+void agreement_AS(
+    const Eigen::MatrixXd                           &serial_matrix_AS,
+    const ygm::container::map<int, Eigen::VectorXd> &parallel_matrix_AS) {
   ygm::comm &comm  = parallel_matrix_AS.comm();
   bool       match = true;
   double     mae(0.0);
   double     max_error(0.0);
-  parallel_matrix_AS.for_all(
-      [&serial_matrix_AS, &match, &mae, &max_error](
-          const int idx, const Eigen::VectorXd &embedding) {
-        double this_mae = krowkee::sketch::detail::mean_absolute_error(
-            embedding, serial_matrix_AS(idx, Eigen::all));
-        if (this_mae >= 1.e-5) {
-          match = false;
-        }
-        mae += this_mae;
-        max_error = std::max(this_mae, max_error);
-      });
+  parallel_matrix_AS.for_all([&serial_matrix_AS, &match, &mae, &max_error](
+                                 const int idx, const Eigen::VectorXd &lhs) {
+    const auto &rhs = serial_matrix_AS(idx, Eigen::all);
+    double this_mae = krowkee::sketch::detail::mean_absolute_error(lhs, rhs);
+    double this_max_error =
+        krowkee::sketch::detail::max_absolute_error(lhs, rhs);
+    if (this_mae >= 1.e-5) {
+      match = false;
+    }
+    mae += this_mae;
+    max_error = std::max(this_max_error, max_error);
+  });
   comm.barrier();
 
   match     = ygm::min(match, comm);
@@ -157,6 +158,11 @@ void agreement_accumulation(
              ", max_error: ", max_error);
   comm.cout0("");
 }
+
+// void agreement_double_matrices(
+//     ygm::comm &comm, const std::vector<Eigen::MatrixXd>
+//     &serial_double_matrices, const std::vector<Eigen::MatrixXd>
+//     &parallel_double_matrices) {}
 
 void serial_multiplication(
     const Eigen::MatrixXd &matrix_A, const Eigen::MatrixXd &serial_matrix_AS,
@@ -333,7 +339,9 @@ int main(int argc, char **argv) {
         world, matrix_A, single_transform_ptrs[0], double_transform_ptrs,
         parallel_matrix_AS, parallel_double_matrices);
 
-    agreement_accumulation(parallel_matrix_AS, serial_matrix_AS);
+    agreement_AS(serial_matrix_AS, parallel_matrix_AS);
+    // agreement_double_matrices(world, serial_double_matrices,
+    //                           parallel_double_matrices);
 
     // We compute the serial power iteration products.
     Eigen::MatrixXd product_exact, product_streaming, product_iterative;
