@@ -181,10 +181,108 @@ std::vector<Eigen::MatrixXd> serial_accumulate_double_matrices(
   return serial_double_matrices;
 }
 
-// void agreement_double_matrices(
-//     ygm::comm &comm, const std::vector<Eigen::MatrixXd>
-//     &serial_double_matrices, const std::vector<Eigen::MatrixXd>
-//     &parallel_double_matrices) {}
+template <typename DoubleSketchType>
+std::vector<Eigen::MatrixXd> parallel_accumulate_double_matrices(
+    const Eigen::MatrixXd                     &matrix_A,
+    ygm::container::map<int, Eigen::VectorXd> &parallel_matrix_AS,
+    std::vector<typename DoubleSketchType::transform_ptr_type>
+        &double_transform_ptrs) {
+  using double_sketch_type = DoubleSketchType;
+  using double_transform_ptr_type =
+      typename DoubleSketchType::transform_ptr_type;
+
+  ygm::comm &comm = parallel_matrix_AS.comm();
+
+  // We also create local double-sided sketches that will hold the double
+  // sided embeddings.
+  static std::vector<double_sketch_type> parallel_double_sketches;
+  for (const double_transform_ptr_type &double_transform_ptr :
+       double_transform_ptrs) {
+    parallel_double_sketches.emplace_back(double_transform_ptr);
+  }
+
+  // We apply the double sketches to each element of `matrix_A` in a single
+  // pass. In practice this could be interleaved with the accumulation of AS.
+  for (int col_idx(0); col_idx < matrix_A.cols(); ++col_idx) {
+    if (comm.rank() == (col_idx % comm.size())) {
+      for (int row_idx(0); row_idx < matrix_A.rows(); ++row_idx) {
+        auto insert_lambda = [](const int              row_idx,
+                                const Eigen::VectorXd &payload,
+                                const int col_idx, const double update) {
+          // insert `(row_idx, col_idx) <- update' into all matrix
+          // sketches.
+          for (double_sketch_type &double_sketch : parallel_double_sketches) {
+            double_sketch.insert({row_idx, col_idx}, update);
+          }
+        };
+        parallel_matrix_AS.async_visit(row_idx, insert_lambda, col_idx,
+                                       matrix_A(row_idx, col_idx));
+      }
+    }
+  }
+  comm.barrier();
+
+  // We dump the contents of the S^tAR embeddings to Eigen matrices.
+  std::vector<Eigen::MatrixXd> parallel_double_matrices;
+  for (int i(0); i < parallel_double_sketches.size(); ++i) {
+    // for (const DoubleSketchType &double_sketch : parallel_double_sketches) {
+    // parallel_double_matrices.push_back(double_sketch.scaled_registers());
+    // using a const reference to avoid an extra copy
+    const Eigen::MatrixXd &double_matrix =
+        parallel_double_sketches[i].container().registers();
+    // it is very important that the dummy matrix have the the correct shapes!
+    parallel_double_matrices.push_back(
+        Eigen::MatrixXd::Zero(double_matrix.rows(), double_matrix.cols()));
+    YGM_ASSERT_MPI(MPI_Allreduce(
+        double_matrix.data(), parallel_double_matrices[i].data(),
+        double_matrix.rows() * double_matrix.cols(),
+        ygm::detail::mpi_typeof(double()), MPI_SUM, comm.get_mpi_comm()));
+    comm.barrier();
+    // apply scaling factor
+    parallel_double_matrices[i] /=
+        DoubleSketchType::transform_type::scaling_factor;
+  }
+
+  return parallel_double_matrices;
+}
+
+template <typename T>
+bool ranks_close(T &value, ygm::comm &comm, double rtol = 1e-5,
+                 double atol = 1e-8) {
+  T pos_min = ygm::min(value, comm);
+  T neg_min = ygm::min(-value, comm);
+  return std::abs(pos_min - neg_min) <=
+         (atol + rtol * std::max(std::abs(pos_min), std::abs(neg_min)));
+}
+
+void agreement_double_matrices(
+    ygm::comm &comm, const std::vector<Eigen::MatrixXd> &serial_double_matrices,
+    const std::vector<Eigen::MatrixXd> &parallel_double_matrices) {
+  bool   match = true;
+  double mae(0.0);
+  double max_error(0.0);
+
+  for (int i(0); i < serial_double_matrices.size(); ++i) {
+    const auto &lhs = parallel_double_matrices[i];
+    const auto &rhs = serial_double_matrices[i];
+    double this_mae = krowkee::sketch::detail::mean_absolute_error(lhs, rhs);
+    double this_max_error =
+        krowkee::sketch::detail::max_absolute_error(lhs, rhs);
+    if (this_mae >= 1e-5) {
+      match = false;
+    }
+    mae += this_mae;
+    max_error = std::max(max_error, this_max_error);
+  }
+  mae /= serial_double_matrices.size();
+
+  bool success = ranks_close(match, comm) && ranks_close(mae, comm) &&
+                 ranks_close(max_error, comm);
+
+  comm.cout0("\tRanks agree? ", success, ", two-sided sketches match? ", match,
+             ", mae: ", mae, ", max_error: ", max_error);
+  comm.cout0("");
+}
 
 void serial_multiplication(
     const Eigen::MatrixXd &matrix_A, const Eigen::MatrixXd &serial_matrix_AS,
@@ -365,7 +463,10 @@ int main(int argc, char **argv) {
     // We create the parallel two-sided matrices
     std::vector<Eigen::MatrixXd> parallel_double_matrices =
         parallel_accumulate_double_matrices<double_sketch_type>(
-            matrix_A, double_transform_ptrs);
+            matrix_A, parallel_matrix_AS, double_transform_ptrs);
+    // We confirm that both implementations arrive at the same double matrices.
+    agreement_double_matrices(world, serial_double_matrices,
+                              parallel_double_matrices);
 
     // We check that the serial and parallel pipelines arrive at the same
     // matrices.
