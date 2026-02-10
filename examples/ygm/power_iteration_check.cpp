@@ -284,6 +284,26 @@ void agreement_double_matrices(
   comm.cout0("");
 }
 
+void agreement_product_partial(
+    ygm::comm &comm, const Eigen::MatrixXd &serial_product_partial,
+    const Eigen::MatrixXd &parallel_product_partial) {
+  bool   match = true;
+  double mae   = krowkee::sketch::detail::mean_absolute_error(
+      serial_product_partial, parallel_product_partial);
+  double max_error = krowkee::sketch::detail::max_absolute_error(
+      serial_product_partial, parallel_product_partial);
+  if (mae >= 1e-5) {
+    match = false;
+  }
+
+  bool success = ranks_close(match, comm) && ranks_close(mae, comm) &&
+                 ranks_close(max_error, comm);
+
+  comm.cout0("\tRanks agree? ", success, ", partial products match? ", match,
+             ", mae: ", mae, ", max_error: ", max_error);
+  comm.cout0("");
+}
+
 Eigen::MatrixXd serial_multiplication_exact(const Eigen::MatrixXd &matrix_A,
                                             int double_matrix_count) {
   // We compute the exact power iteration product.
@@ -303,41 +323,6 @@ Eigen::MatrixXd serial_multiplication_iterative(
     serial_product_iterative *= matrix_A;
   }
   return serial_product_iterative;
-}
-
-Eigen::MatrixXd serial_multiplication_streaming(
-    const Eigen::MatrixXd              &serial_matrix_AS,
-    const std::vector<Eigen::MatrixXd> &serial_double_matrices) {
-  // We compute the streaming power iteration product.
-  Eigen::MatrixXd serial_product_streaming = serial_matrix_AS;
-  for (int i(0); i < serial_double_matrices.size(); ++i) {
-    serial_product_streaming *= serial_double_matrices[i];
-  }
-  return serial_product_streaming;
-}
-
-void serial_multiplication(
-    const Eigen::MatrixXd &matrix_A, const Eigen::MatrixXd &serial_matrix_AS,
-    const std::vector<Eigen::MatrixXd> &serial_double_matrices,
-    Eigen::MatrixXd &product_exact, Eigen::MatrixXd &product_streaming,
-    Eigen::MatrixXd &product_iterative) {
-  // We compute the exact power iteration product.
-  product_exact = matrix_A;
-  for (int i(0); i < serial_double_matrices.size(); ++i) {
-    product_exact *= matrix_A;
-  }
-
-  // We compute the streaming power iteration product.
-  product_streaming = serial_matrix_AS;
-  for (int i(0); i < serial_double_matrices.size(); ++i) {
-    product_streaming *= serial_double_matrices[i];
-  }
-
-  // We compute the iterative power iteration product.
-  product_iterative = serial_matrix_AS;
-  for (int i(0); i < serial_double_matrices.size(); ++i) {
-    product_iterative *= matrix_A;
-  }
 }
 
 void serial_lemma_check(ygm::comm &comm, const Eigen::MatrixXd &product_exact,
@@ -496,17 +481,31 @@ int main(int argc, char **argv) {
     std::vector<Eigen::MatrixXd> parallel_double_matrices =
         parallel_accumulate_double_matrices<double_sketch_type>(
             matrix_A, parallel_matrix_AS, double_transform_ptrs);
-    // We confirm that both implementations arrive at the same double matrices.
+    // We confirm that both implementations arrive at close double matrices.
     agreement_double_matrices(world, serial_double_matrices,
                               parallel_double_matrices);
+
+    // We compute the partial products for both serial and parallel
+    // implementations.
+    Eigen::MatrixXd serial_product_partial = serial_double_matrices[0];
+    for (int i(1); i < serial_double_matrices.size(); ++i) {
+      serial_product_partial *= serial_double_matrices[i];
+    }
+    Eigen::MatrixXd parallel_product_partial = parallel_double_matrices[0];
+    for (int i(1); i < parallel_double_matrices.size(); ++i) {
+      parallel_product_partial *= parallel_double_matrices[i];
+    }
+    // We confirm that both implementations arrive at close partial products
+    agreement_product_partial(world, serial_product_partial,
+                              parallel_product_partial);
 
     // We compute the serial power iteration products.
     Eigen::MatrixXd serial_product_exact =
         serial_multiplication_exact(matrix_A, serial_double_matrices.size());
     Eigen::MatrixXd serial_product_iterative = serial_multiplication_iterative(
         serial_matrix_AS, matrix_A, serial_double_matrices.size());
-    Eigen::MatrixXd serial_product_streaming = serial_multiplication_streaming(
-        serial_matrix_AS, serial_double_matrices);
+    Eigen::MatrixXd serial_product_streaming =
+        serial_matrix_AS * serial_product_partial;
 
     world.cout0("A(5,7) = ", matrix_A(5, 7));
     world.cout0("A^", transform_count, "(5,7) = ", serial_product_exact(5, 7));
