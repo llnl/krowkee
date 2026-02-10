@@ -29,41 +29,30 @@ bool in_bounds(const double tru, const double est, const double eps) {
   return (est < (1 + eps) * tru) && (est > (1 - eps) * tru);
 }
 
-template <typename SingleSketchType, typename DoubleSketchType>
-void serial_accumulate(
+template <typename SingleSketchType>
+Eigen::MatrixXd serial_accumulate_AS(
     const Eigen::MatrixXd                         &matrix_A,
-    typename SingleSketchType::transform_ptr_type &single_transform_ptr,
-    std::vector<typename DoubleSketchType::transform_ptr_type>
-                                 &double_transform_ptrs,
-    Eigen::MatrixXd              &serial_matrix_AS,
-    std::vector<Eigen::MatrixXd> &serial_double_matrices) {
-  // We create a `std::map` that will hold the AS embeddings for each row of A.
-  // Initialize each such row to be an empty sketch using the zeroth transform.
+    typename SingleSketchType::transform_ptr_type &single_transform_ptr) {
+  // Initialize a zeros matrix
+  Eigen::MatrixXd serial_matrix_AS = Eigen::MatrixXd::Zero(
+      matrix_A.rows(), SingleSketchType::transform_type::size());
+
+  // We create a `std::map` that will hold the AS embeddings for each row of
+  // A. Initialize each such row to be an empty sketch using the zeroth
+  // transform.
   std::vector<SingleSketchType> serial_single_sketches;
   for (int i(0); i < matrix_A.rows(); ++i) {
     serial_single_sketches.emplace_back(single_transform_ptr);
   }
 
-  // We also create a vector of local double-sided sketches that will hold the
-  // double sided embeddings.
-  std::vector<DoubleSketchType> serial_double_sketches;
-  for (const auto &double_transform_ptr : double_transform_ptrs) {
-    serial_double_sketches.emplace_back(double_transform_ptr);
-  }
-
-  // We apply both the single and double sketches to each element of `matrix_A`
-  // in a single pass.
+  // We apply the single-sided sketches to each element of `matrix_A` in a
+  // single pass.
   int i(0);
   for (const auto &row : matrix_A.rowwise()) {
     int j(0);
     for (const auto &element : row) {
       // insert `(j, element)` into the `i`th row sketch of `AS`
       serial_single_sketches[i].insert(j, element);
-      for (DoubleSketchType &double_sketch : serial_double_sketches) {
-        // insert `((i, j), element)` into each double sketch of the form
-        // `S^tAR`
-        double_sketch.insert({i, j}, element);
-      }
       ++j;
     }
     ++i;
@@ -77,21 +66,17 @@ void serial_accumulate(
     }
   }
 
-  // We dump the contents of the S^tAR embeddings to Eigen matrices.
-  for (const DoubleSketchType &double_sketch : serial_double_sketches) {
-    serial_double_matrices.push_back(double_sketch.scaled_registers());
-  }
+  return serial_matrix_AS;
 }
 
 template <typename SingleSketchType, typename DoubleSketchType>
-void parallel_accumulate(
+ygm::container::map<int, Eigen::VectorXd> parallel_accumulate_AS(
     ygm::comm &comm, const Eigen::MatrixXd &matrix_A,
-    typename SingleSketchType::transform_ptr_type &single_transform_ptr,
-    std::vector<typename DoubleSketchType::transform_ptr_type>
-                                              &double_transform_ptrs,
-    ygm::container::map<int, Eigen::VectorXd> &parallel_matrix_AS,
-    std::vector<Eigen::MatrixXd>              &parallel_double_matrices) {
+    typename SingleSketchType::transform_ptr_type &single_transform_ptr) {
   using single_sketch_type = SingleSketchType;
+
+  // Eigen::VectorXd default_embedding = Eigen::VectorXd::Zero(matrix_A.cols());
+  ygm::container::map<int, Eigen::VectorXd> parallel_matrix_AS(comm);
 
   // We create a ygm::map that will hold the sketches for each row of A.
   single_sketch_type default_sketch(single_transform_ptr);
@@ -112,10 +97,6 @@ void parallel_accumulate(
   }
   comm.barrier();
 
-  // Eigen::VectorXd default_embedding = Eigen::VectorXd::Zero(matrix_A.cols());
-  // ygm::container::map<int, Eigen::VectorXd> parallel_matrix_AS(
-  //     comm, default_embedding);
-
   single_sketches.for_all(
       [&parallel_matrix_AS](const int idx, const single_sketch_type &sketch) {
         Eigen::VectorXd embedding(sketch.size());
@@ -127,6 +108,8 @@ void parallel_accumulate(
         parallel_matrix_AS.async_insert(idx, embedding);
       });
   comm.barrier();
+
+  return parallel_matrix_AS;
 }
 
 void agreement_AS(
@@ -157,6 +140,45 @@ void agreement_AS(
   comm.cout0("\tOne sided sketches match? ", match, ", mae: ", mae,
              ", max_error: ", max_error);
   comm.cout0("");
+}
+
+template <typename DoubleSketchType>
+std::vector<Eigen::MatrixXd> serial_accumulate_double_matrices(
+    const Eigen::MatrixXd &matrix_A,
+    std::vector<typename DoubleSketchType::transform_ptr_type>
+        &double_transform_ptrs) {
+  // We create the double matrices array
+  std::vector<Eigen::MatrixXd> serial_double_matrices;
+
+  // We create a vector of local double-sided sketches that will hold the double
+  // sided embeddings.
+  std::vector<DoubleSketchType> serial_double_sketches;
+  for (const auto &double_transform_ptr : double_transform_ptrs) {
+    serial_double_sketches.emplace_back(double_transform_ptr);
+  }
+
+  // We apply the double sketches to each element of `matrix_A` in a single
+  // pass.
+  int i(0);
+  for (const auto &row : matrix_A.rowwise()) {
+    int j(0);
+    for (const auto &element : row) {
+      for (DoubleSketchType &double_sketch : serial_double_sketches) {
+        // insert `((i, j), element)` into each double sketch of the form
+        // `S^tAR`
+        double_sketch.insert({i, j}, element);
+      }
+      ++j;
+    }
+    ++i;
+  }
+
+  // We dump the contents of the S^tAR embeddings to Eigen matrices.
+  for (const DoubleSketchType &double_sketch : serial_double_sketches) {
+    serial_double_matrices.push_back(double_sketch.scaled_registers());
+  }
+
+  return serial_double_matrices;
 }
 
 // void agreement_double_matrices(
@@ -326,20 +348,27 @@ int main(int argc, char **argv) {
     static Eigen::MatrixXd matrix_A =
         Eigen::MatrixXd::Random(row_count, col_count);
 
-    Eigen::MatrixXd serial_matrix_AS =
-        Eigen::MatrixXd::Zero(matrix_A.rows(), single_transform_type::size());
-    std::vector<Eigen::MatrixXd> serial_double_matrices;
-    serial_accumulate<single_sketch_type, double_sketch_type>(
-        matrix_A, single_transform_ptrs[0], double_transform_ptrs,
-        serial_matrix_AS, serial_double_matrices);
-
-    ygm::container::map<int, Eigen::VectorXd> parallel_matrix_AS(world);
-    std::vector<Eigen::MatrixXd>              parallel_double_matrices;
-    parallel_accumulate<single_sketch_type, double_sketch_type>(
-        world, matrix_A, single_transform_ptrs[0], double_transform_ptrs,
-        parallel_matrix_AS, parallel_double_matrices);
-
+    // We create the serial one-sided sketch object
+    Eigen::MatrixXd serial_matrix_AS = serial_accumulate_AS<single_sketch_type>(
+        matrix_A, single_transform_ptrs[0]);
+    // We create the parallel one-sided sketch object
+    ygm::container::map<int, Eigen::VectorXd> parallel_matrix_AS =
+        parallel_accumulate_AS<single_sketch_type, double_sketch_type>(
+            world, matrix_A, single_transform_ptrs[0]);
+    // We confirm that both implementations arrive at the same AS.
     agreement_AS(serial_matrix_AS, parallel_matrix_AS);
+
+    // We create the serial two-sided matrices
+    std::vector<Eigen::MatrixXd> serial_double_matrices =
+        serial_accumulate_double_matrices<double_sketch_type>(
+            matrix_A, double_transform_ptrs);
+    // We create the parallel two-sided matrices
+    std::vector<Eigen::MatrixXd> parallel_double_matrices =
+        parallel_accumulate_double_matrices<double_sketch_type>(
+            matrix_A, double_transform_ptrs);
+
+    // We check that the serial and parallel pipelines arrive at the same
+    // matrices.
     // agreement_double_matrices(world, serial_double_matrices,
     //                           parallel_double_matrices);
 
