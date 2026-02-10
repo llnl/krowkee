@@ -284,6 +284,38 @@ void agreement_double_matrices(
   comm.cout0("");
 }
 
+Eigen::MatrixXd serial_multiplication_exact(const Eigen::MatrixXd &matrix_A,
+                                            int double_matrix_count) {
+  // We compute the exact power iteration product.
+  Eigen::MatrixXd serial_product_exact = matrix_A;
+  for (int i(0); i < double_matrix_count; ++i) {
+    serial_product_exact *= matrix_A;
+  }
+  return serial_product_exact;
+}
+
+Eigen::MatrixXd serial_multiplication_iterative(
+    const Eigen::MatrixXd &serial_matrix_AS, const Eigen::MatrixXd &matrix_A,
+    int double_matrix_count) {
+  // We compute the iterative power iteration product.
+  Eigen::MatrixXd serial_product_iterative = serial_matrix_AS;
+  for (int i(0); i < double_matrix_count; ++i) {
+    serial_product_iterative *= matrix_A;
+  }
+  return serial_product_iterative;
+}
+
+Eigen::MatrixXd serial_multiplication_streaming(
+    const Eigen::MatrixXd              &serial_matrix_AS,
+    const std::vector<Eigen::MatrixXd> &serial_double_matrices) {
+  // We compute the streaming power iteration product.
+  Eigen::MatrixXd serial_product_streaming = serial_matrix_AS;
+  for (int i(0); i < serial_double_matrices.size(); ++i) {
+    serial_product_streaming *= serial_double_matrices[i];
+  }
+  return serial_product_streaming;
+}
+
 void serial_multiplication(
     const Eigen::MatrixXd &matrix_A, const Eigen::MatrixXd &serial_matrix_AS,
     const std::vector<Eigen::MatrixXd> &serial_double_matrices,
@@ -468,18 +500,16 @@ int main(int argc, char **argv) {
     agreement_double_matrices(world, serial_double_matrices,
                               parallel_double_matrices);
 
-    // We check that the serial and parallel pipelines arrive at the same
-    // matrices.
-    // agreement_double_matrices(world, serial_double_matrices,
-    //                           parallel_double_matrices);
-
     // We compute the serial power iteration products.
-    Eigen::MatrixXd product_exact, product_streaming, product_iterative;
-    serial_multiplication(matrix_A, serial_matrix_AS, serial_double_matrices,
-                          product_exact, product_streaming, product_iterative);
+    Eigen::MatrixXd serial_product_exact =
+        serial_multiplication_exact(matrix_A, serial_double_matrices.size());
+    Eigen::MatrixXd serial_product_iterative = serial_multiplication_iterative(
+        serial_matrix_AS, matrix_A, serial_double_matrices.size());
+    Eigen::MatrixXd serial_product_streaming = serial_multiplication_streaming(
+        serial_matrix_AS, serial_double_matrices);
 
     world.cout0("A(5,7) = ", matrix_A(5, 7));
-    world.cout0("A^", transform_count, "(5,7) = ", product_exact(5, 7));
+    world.cout0("A^", transform_count, "(5,7) = ", serial_product_exact(5, 7));
 
     // We now compare the embedding vectors. In practice this could be done more
     // efficiently, but this implementation suffices for illustration.
@@ -493,8 +523,8 @@ int main(int argc, char **argv) {
                   single_sketch_type::transform_type::replication_count())) /
         range_size);
 
-    serial_lemma_check(world, product_exact, product_streaming,
-                       product_iterative, epsilon_expected);
+    serial_lemma_check(world, serial_product_exact, serial_product_streaming,
+                       serial_product_iterative, epsilon_expected);
   }
   return 0;
 }
