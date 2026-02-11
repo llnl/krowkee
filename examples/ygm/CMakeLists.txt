@@ -1,4 +1,2 @@
 add_krowkee_example(sketch_map)
 add_krowkee_example(merge_map)
-add_krowkee_example(power_iteration_check)
-add_krowkee_example(power_iteration_map)
