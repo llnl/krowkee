@@ -302,11 +302,14 @@ void agreement_matrices(ygm::comm &comm, const std::string &&name,
     match = false;
   }
 
-  bool success = ranks_close(match, comm) && ranks_close(mae, comm) &&
-                 ranks_close(max_error, comm);
+  bool match_success     = ranks_close(match, comm);
+  bool mae_success       = ranks_close(mae, comm);
+  bool max_error_success = ranks_close(max_error, comm);
+  bool success           = match_success && mae_success && max_error_success;
 
-  comm.cout0("\t", name, ", ranks agree? ", success,
-             ", partial products match? ", match, ", mae: ", mae,
+  comm.cout0("\t", name, ", ranks agree (match, mae, max error)? (",
+             match_success, ", ", mae_success, ", ", max_error_success,
+             "), partial products match? ", match, ", mae: ", mae,
              ", max_error: ", max_error);
   comm.cout0("");
 }
@@ -333,17 +336,16 @@ Eigen::MatrixXd serial_multiplication_iterative(
   return serial_product_iterative;
 }
 
-Eigen::MatrixXd parallel_multiplication_iterative(
+Eigen::MatrixXd localize_AS(
     ygm::container::map<int, Eigen::VectorXd> &parallel_matrix_AS,
-    const Eigen::MatrixXd &matrix_A, int double_matrix_count,
-    int embedding_size) {
+    int                                        embedding_size) {
   ygm::comm &comm = parallel_matrix_AS.comm();
   // We compute the iterative power iteration product. If matrix_A were large,
   // it would be necessary to implement this product differently.
   Eigen::MatrixXd localized_AS_piece =
-      Eigen::MatrixXd::Zero(matrix_A.rows(), embedding_size);
+      Eigen::MatrixXd::Zero(parallel_matrix_AS.size(), embedding_size);
   Eigen::MatrixXd localized_AS =
-      Eigen::MatrixXd::Zero(matrix_A.rows(), embedding_size);
+      Eigen::MatrixXd::Zero(parallel_matrix_AS.size(), embedding_size);
 
   parallel_matrix_AS.for_all(
       [&localized_AS_piece](const int &idx, const Eigen::VectorXd &row) {
@@ -357,6 +359,15 @@ Eigen::MatrixXd parallel_multiplication_iterative(
       ygm::detail::mpi_typeof(double()), MPI_SUM, comm.get_mpi_comm()));
   comm.barrier();
 
+  comm.cout0("localized_AS dimensions: (", localized_AS.rows(), ", ",
+             localized_AS.cols(), ")");
+
+  return localized_AS;
+}
+
+Eigen::MatrixXd parallel_multiplication_iterative(
+    Eigen::MatrixXd &localized_AS, const Eigen::MatrixXd &matrix_A,
+    int double_matrix_count) {
   Eigen::MatrixXd parallel_product_iterative = matrix_A;
   for (int i(1); i < double_matrix_count; ++i) {
     parallel_product_iterative *= matrix_A;
@@ -368,8 +379,8 @@ Eigen::MatrixXd parallel_multiplication_iterative(
 
 void lemma_check(ygm::comm &comm, const std::string &&name,
                  const Eigen::MatrixXd &product_exact,
-                 const Eigen::MatrixXd &product_streaming,
                  const Eigen::MatrixXd &product_iterative,
+                 const Eigen::MatrixXd &product_streaming,
                  const double           epsilon_expected) {
   double success_rate_streaming(0.0);
   double success_rate_iterative(0.0);
@@ -552,21 +563,21 @@ int main(int argc, char **argv) {
     // We confirm that serial and parallel iterative products are close.
     Eigen::MatrixXd serial_product_iterative = serial_multiplication_iterative(
         serial_matrix_AS, matrix_A, serial_double_matrices.size());
+    Eigen::MatrixXd localized_AS =
+        localize_AS(parallel_matrix_AS, serial_matrix_AS.cols());
     Eigen::MatrixXd parallel_product_iterative =
-        parallel_multiplication_iterative(parallel_matrix_AS, matrix_A,
-                                          serial_double_matrices.size(),
-                                          serial_matrix_AS.cols());
+        parallel_multiplication_iterative(localized_AS, matrix_A,
+                                          serial_double_matrices.size());
     agreement_matrices(world, "Iterative products", serial_product_iterative,
                        parallel_product_iterative);
 
     // We confirm that the serial and parallel streaming products are close.
     Eigen::MatrixXd serial_product_streaming =
-        serial_product_partial * serial_matrix_AS;
-    // Eigen::MatrixXd parallel_product_streaming =
-    //     parallel_multiplication_streaming(parallel_matrix_AS,
-    //                                       parallel_product_partial);
-    // agreement_matrices(world, "Streaming products", serial_product_streaming,
-    //                    parallel_product_streaming);
+        serial_matrix_AS * serial_product_partial;
+    Eigen::MatrixXd parallel_product_streaming =
+        localized_AS * parallel_product_partial;
+    agreement_matrices(world, "Streaming products", serial_product_streaming,
+                       parallel_product_streaming);
 
     world.cout0("A(5,7) = ", matrix_A(5, 7));
     world.cout0("A^", transform_count, "(5,7) = ", serial_product_exact(5, 7));
@@ -583,10 +594,10 @@ int main(int argc, char **argv) {
                   single_sketch_type::transform_type::replication_count())) /
         range_size);
 
-    lemma_check(world, "serial", serial_product_exact, serial_product_streaming,
-                serial_product_iterative, epsilon_expected);
+    lemma_check(world, "serial", serial_product_exact, serial_product_iterative,
+                serial_product_streaming, epsilon_expected);
     lemma_check(world, "parallel", serial_product_exact,
-                parallel_product_iterative, parallel_product_iterative,
+                parallel_product_iterative, parallel_product_streaming,
                 epsilon_expected);
   }
   return 0;
