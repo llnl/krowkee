@@ -151,16 +151,18 @@ int main(int argc, char **argv) {
   }
 
   // We compute the streaming power iteration product.
-  Eigen::MatrixXd product_streaming = matrix_AS;
-  for (int i(0); i < double_matrices.size(); ++i) {
+  Eigen::MatrixXd product_streaming = double_matrices[0];
+  for (int i(1); i < double_matrices.size(); ++i) {
     product_streaming *= double_matrices[i];
   }
+  product_streaming *= matrix_AS;
 
   // We compute the iterative power iteration product.
-  Eigen::MatrixXd product_iterative = matrix_AS;
-  for (int i(0); i < double_matrices.size(); ++i) {
+  Eigen::MatrixXd product_iterative = matrix_A;
+  for (int i(1); i < double_matrices.size(); ++i) {
     product_iterative *= matrix_A;
   }
+  product_iterative *= matrix_AS;
 
   // We compute the exact power iteration product.
   Eigen::MatrixXd product_exact = matrix_A;

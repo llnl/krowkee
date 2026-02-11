@@ -15,6 +15,8 @@
 #include <random>
 #include <type_traits>
 
+static const bool verbose = false;
+
 double spectral_norm(const Eigen::MatrixXd &matrix) {
   Eigen::JacobiSVD<Eigen::MatrixXd> svd(
       matrix, Eigen::ComputeThinU | Eigen::ComputeThinV);
@@ -112,8 +114,8 @@ ygm::container::map<int, Eigen::VectorXd> parallel_accumulate_AS(
   return parallel_matrix_AS;
 }
 
-void agreement_AS(
-    const Eigen::MatrixXd                           &serial_matrix_AS,
+void agreement_parallel_matrix(
+    const std::string &&name, const Eigen::MatrixXd &serial_matrix_AS,
     const ygm::container::map<int, Eigen::VectorXd> &parallel_matrix_AS) {
   ygm::comm &comm  = parallel_matrix_AS.comm();
   bool       match = true;
@@ -122,6 +124,12 @@ void agreement_AS(
   parallel_matrix_AS.for_all([&serial_matrix_AS, &match, &mae, &max_error](
                                  const int idx, const Eigen::VectorXd &lhs) {
     const auto &rhs = serial_matrix_AS(idx, Eigen::all);
+    if (verbose && idx == 199) {
+      std::cout << "\tparallel embedding: " << std::endl;
+      std::cout << lhs << std::endl;
+      std::cout << "\tserial embedding: " << std::endl;
+      std::cout << rhs << std::endl;
+    }
     double this_mae = krowkee::sketch::detail::mean_absolute_error(lhs, rhs);
     double this_max_error =
         krowkee::sketch::detail::max_absolute_error(lhs, rhs);
@@ -137,7 +145,7 @@ void agreement_AS(
   mae       = ygm::sum(mae, comm) / serial_matrix_AS.rows();
   max_error = ygm::max(max_error, comm);
 
-  comm.cout0("\tOne sided sketches match? ", match, ", mae: ", mae,
+  comm.cout0("\t", name, " match? ", match, ", mae: ", mae,
              ", max_error: ", max_error);
   comm.cout0("");
 }
@@ -284,14 +292,12 @@ void agreement_double_matrices(
   comm.cout0("");
 }
 
-void agreement_product_partial(
-    ygm::comm &comm, const Eigen::MatrixXd &serial_product_partial,
-    const Eigen::MatrixXd &parallel_product_partial) {
-  bool   match = true;
-  double mae   = krowkee::sketch::detail::mean_absolute_error(
-      serial_product_partial, parallel_product_partial);
-  double max_error = krowkee::sketch::detail::max_absolute_error(
-      serial_product_partial, parallel_product_partial);
+void agreement_matrices(ygm::comm &comm, const std::string &&name,
+                        const Eigen::MatrixXd &lhs,
+                        const Eigen::MatrixXd &rhs) {
+  bool   match     = true;
+  double mae       = krowkee::sketch::detail::mean_absolute_error(lhs, rhs);
+  double max_error = krowkee::sketch::detail::max_absolute_error(lhs, rhs);
   if (mae >= 1e-5) {
     match = false;
   }
@@ -299,8 +305,9 @@ void agreement_product_partial(
   bool success = ranks_close(match, comm) && ranks_close(mae, comm) &&
                  ranks_close(max_error, comm);
 
-  comm.cout0("\tRanks agree? ", success, ", partial products match? ", match,
-             ", mae: ", mae, ", max_error: ", max_error);
+  comm.cout0("\t", name, ", ranks agree? ", success,
+             ", partial products match? ", match, ", mae: ", mae,
+             ", max_error: ", max_error);
   comm.cout0("");
 }
 
@@ -318,17 +325,52 @@ Eigen::MatrixXd serial_multiplication_iterative(
     const Eigen::MatrixXd &serial_matrix_AS, const Eigen::MatrixXd &matrix_A,
     int double_matrix_count) {
   // We compute the iterative power iteration product.
-  Eigen::MatrixXd serial_product_iterative = serial_matrix_AS;
-  for (int i(0); i < double_matrix_count; ++i) {
+  Eigen::MatrixXd serial_product_iterative = matrix_A;
+  for (int i(1); i < double_matrix_count; ++i) {
     serial_product_iterative *= matrix_A;
   }
+  serial_product_iterative *= serial_matrix_AS;
   return serial_product_iterative;
 }
 
-void serial_lemma_check(ygm::comm &comm, const Eigen::MatrixXd &product_exact,
-                        const Eigen::MatrixXd &product_streaming,
-                        const Eigen::MatrixXd &product_iterative,
-                        const double           epsilon_expected) {
+Eigen::MatrixXd parallel_multiplication_iterative(
+    ygm::container::map<int, Eigen::VectorXd> &parallel_matrix_AS,
+    const Eigen::MatrixXd &matrix_A, int double_matrix_count,
+    int embedding_size) {
+  ygm::comm &comm = parallel_matrix_AS.comm();
+  // We compute the iterative power iteration product. If matrix_A were large,
+  // it would be necessary to implement this product differently.
+  Eigen::MatrixXd localized_AS_piece =
+      Eigen::MatrixXd::Zero(matrix_A.rows(), embedding_size);
+  Eigen::MatrixXd localized_AS =
+      Eigen::MatrixXd::Zero(matrix_A.rows(), embedding_size);
+
+  parallel_matrix_AS.for_all(
+      [&localized_AS_piece](const int &idx, const Eigen::VectorXd &row) {
+        localized_AS_piece.row(idx) = row;
+      });
+  comm.barrier();
+
+  YGM_ASSERT_MPI(MPI_Allreduce(
+      localized_AS_piece.data(), localized_AS.data(),
+      localized_AS_piece.rows() * localized_AS_piece.cols(),
+      ygm::detail::mpi_typeof(double()), MPI_SUM, comm.get_mpi_comm()));
+  comm.barrier();
+
+  Eigen::MatrixXd parallel_product_iterative = matrix_A;
+  for (int i(1); i < double_matrix_count; ++i) {
+    parallel_product_iterative *= matrix_A;
+  }
+  parallel_product_iterative *= localized_AS;
+
+  return parallel_product_iterative;
+}
+
+void lemma_check(ygm::comm &comm, const std::string &&name,
+                 const Eigen::MatrixXd &product_exact,
+                 const Eigen::MatrixXd &product_streaming,
+                 const Eigen::MatrixXd &product_iterative,
+                 const double           epsilon_expected) {
   double success_rate_streaming(0.0);
   double success_rate_iterative(0.0);
   double epsilon_streaming(0.0);
@@ -341,14 +383,6 @@ void serial_lemma_check(ygm::comm &comm, const Eigen::MatrixXd &product_exact,
       // compute exact distance between power iteration rows
       double dist_exact =
           (product_exact.row(i) - product_exact.row(j)).lpNorm<2>();
-      // compute distance between streaming embedding rows
-      double dist_streaming =
-          (product_streaming.row(i) - product_streaming.row(j)).lpNorm<2>();
-      double error_streaming = std::abs(1.0 - dist_streaming / dist_exact);
-      epsilon_streaming += error_streaming;
-      if (in_bounds(dist_exact, dist_streaming, epsilon_expected)) {
-        success_rate_streaming += 1.0;
-      }
       // compute distance between iterative embedding rows
       double dist_iterative =
           (product_iterative.row(i) - product_iterative.row(j)).lpNorm<2>();
@@ -357,15 +391,25 @@ void serial_lemma_check(ygm::comm &comm, const Eigen::MatrixXd &product_exact,
       if (in_bounds(dist_exact, dist_iterative, epsilon_expected)) {
         success_rate_iterative += 1.0;
       }
-      if (i == 199 && j == 230) {
-        std::cout << "\t(" << i << "," << j << ") exact " << dist_exact
-                  << "\n\t\tstreaming (dist/error/success): (" << dist_streaming
-                  << ", 1 +/- " << error_streaming << ", "
-                  << in_bounds(dist_exact, dist_streaming, epsilon_expected)
-                  << ")\n\t\titerative (dist/error/success): ("
-                  << dist_iterative << ", 1 +/- " << error_iterative << ", "
-                  << in_bounds(dist_exact, dist_iterative, epsilon_expected)
-                  << ")" << std::endl;
+      // compute distance between streaming embedding rows
+      double dist_streaming =
+          (product_streaming.row(i) - product_streaming.row(j)).lpNorm<2>();
+      double error_streaming = std::abs(1.0 - dist_streaming / dist_exact);
+      epsilon_streaming += error_streaming;
+      if (in_bounds(dist_exact, dist_streaming, epsilon_expected)) {
+        success_rate_streaming += 1.0;
+      }
+      if (verbose && i == 199 && j == 230) {
+        comm.cout0("\tlhs_embedding:\n", product_iterative.row(i), "\n",
+                   "\trhs_embedding:\n", product_iterative.row(j));
+
+        comm.cout0("\t(", i, ",", j, ") exact ", dist_exact,
+                   ")\n\t\titerative (dist/error/success): (", dist_iterative,
+                   ", 1 +/- ", error_iterative, ", ",
+                   in_bounds(dist_exact, dist_iterative, epsilon_expected), ")",
+                   "\n\t\tstreaming (dist/error/success): (", dist_streaming,
+                   ", 1 +/- ", error_streaming, ", ",
+                   in_bounds(dist_exact, dist_streaming, epsilon_expected));
       }
     }
   }
@@ -375,13 +419,14 @@ void serial_lemma_check(ygm::comm &comm, const Eigen::MatrixXd &product_exact,
   epsilon_streaming /= trials;
   epsilon_iterative /= trials;
 
-  comm.cout0("\npower iteration approximate row distances guarantee (", trials,
+  comm.cout0("\n", name,
+             " power iteration approximate row distances guarantee (", trials,
              " trials)");
-  comm.cout0("\tstreaming success rate / epsilon / expected = (",
-             success_rate_streaming, ", ", epsilon_streaming, ", ",
-             epsilon_expected, ")");
   comm.cout0("\titerative success rate / epsilon / expected = (",
              success_rate_iterative, ", ", epsilon_iterative, ", ",
+             epsilon_expected, ")");
+  comm.cout0("\tstreaming success rate / epsilon / expected = (",
+             success_rate_streaming, ", ", epsilon_streaming, ", ",
              epsilon_expected, ")\n");
 }
 
@@ -471,7 +516,8 @@ int main(int argc, char **argv) {
         parallel_accumulate_AS<single_sketch_type, double_sketch_type>(
             world, matrix_A, single_transform_ptrs[0]);
     // We confirm that both implementations arrive at the same AS.
-    agreement_AS(serial_matrix_AS, parallel_matrix_AS);
+    agreement_parallel_matrix("One-sided sketches", serial_matrix_AS,
+                              parallel_matrix_AS);
 
     // We create the serial two-sided matrices
     std::vector<Eigen::MatrixXd> serial_double_matrices =
@@ -496,16 +542,31 @@ int main(int argc, char **argv) {
       parallel_product_partial *= parallel_double_matrices[i];
     }
     // We confirm that both implementations arrive at close partial products
-    agreement_product_partial(world, serial_product_partial,
-                              parallel_product_partial);
+    agreement_matrices(world, "Partial products", serial_product_partial,
+                       parallel_product_partial);
 
-    // We compute the serial power iteration products.
+    // We compute the serial power iteration product.
     Eigen::MatrixXd serial_product_exact =
         serial_multiplication_exact(matrix_A, serial_double_matrices.size());
+
+    // We confirm that serial and parallel iterative products are close.
     Eigen::MatrixXd serial_product_iterative = serial_multiplication_iterative(
         serial_matrix_AS, matrix_A, serial_double_matrices.size());
+    Eigen::MatrixXd parallel_product_iterative =
+        parallel_multiplication_iterative(parallel_matrix_AS, matrix_A,
+                                          serial_double_matrices.size(),
+                                          serial_matrix_AS.cols());
+    agreement_matrices(world, "Iterative products", serial_product_iterative,
+                       parallel_product_iterative);
+
+    // We confirm that the serial and parallel streaming products are close.
     Eigen::MatrixXd serial_product_streaming =
-        serial_matrix_AS * serial_product_partial;
+        serial_product_partial * serial_matrix_AS;
+    // Eigen::MatrixXd parallel_product_streaming =
+    //     parallel_multiplication_streaming(parallel_matrix_AS,
+    //                                       parallel_product_partial);
+    // agreement_matrices(world, "Streaming products", serial_product_streaming,
+    //                    parallel_product_streaming);
 
     world.cout0("A(5,7) = ", matrix_A(5, 7));
     world.cout0("A^", transform_count, "(5,7) = ", serial_product_exact(5, 7));
@@ -522,8 +583,11 @@ int main(int argc, char **argv) {
                   single_sketch_type::transform_type::replication_count())) /
         range_size);
 
-    serial_lemma_check(world, serial_product_exact, serial_product_streaming,
-                       serial_product_iterative, epsilon_expected);
+    lemma_check(world, "serial", serial_product_exact, serial_product_streaming,
+                serial_product_iterative, epsilon_expected);
+    lemma_check(world, "parallel", serial_product_exact,
+                parallel_product_iterative, parallel_product_iterative,
+                epsilon_expected);
   }
   return 0;
 }
