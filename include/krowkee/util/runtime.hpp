@@ -7,6 +7,10 @@
 
 #include <krowkee/util/check.hpp>
 
+#if __has_include(<ygm/comm.hpp>)
+#include <ygm/comm.hpp>
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -23,6 +27,12 @@ inline void print_line() {
   std::cout << "-----------------------------------------------------"
             << std::endl;
 }
+
+#if __has_include(<ygm/comm.hpp>)
+inline void print_line(ygm::comm &comm) {
+  comm.cout0("-----------------------------------------------------");
+}
+#endif
 
 inline void chirp() { std::cout << "gets here" << std::endl; }
 
@@ -183,6 +193,23 @@ void do_test(Args &&...args) {
   std::cout << "\tTest time: " << ((double)ns / 1e9) << "s" << std::endl;
   std::cout << std::endl << std::endl;
 }
+
+#if __has_include(<ygm/comm.hpp>)
+template <typename FuncType, typename... Args>
+void do_ygm_test(ygm::comm &comm, Args &&...args) {
+  FuncType func;
+  print_line(comm);
+  comm.cout0(func.name(), ":");
+  print_line(comm);
+  auto start(Clock::now());
+  func(args...);
+  comm.barrier();
+  auto end(Clock::now());
+  auto ns(std::chrono::duration_cast<ns_type>(end - start).count());
+  print_line(comm);
+  comm.cout0("\tTest time: ", ((double)ns / 1e9), "s\n\n");
+}
+#endif
 
 /**
  * Functor wrapping std::make_shared

@@ -5,6 +5,7 @@
 
 #include <krowkee/hash/hash.hpp>
 #include <krowkee/sketch.hpp>
+#include <krowkee/util/runtime.hpp>
 
 #include <ygm/comm.hpp>
 #include <ygm/container/map.hpp>
@@ -441,61 +442,36 @@ void lemma_check(ygm::comm &comm, const std::string &&name,
              epsilon_expected, ")\n");
 }
 
-int main(int argc, char **argv) {
-  ygm::comm world(&argc, &argv);
-  {
+template <typename SingleSketchType, typename DoubleSketchType>
+struct power_iteration_check {
+  using single_sketch_type    = SingleSketchType;
+  using single_transform_type = typename single_sketch_type::transform_type;
+  using single_transform_ptr_type =
+      typename single_sketch_type::transform_ptr_type;
+  using double_sketch_type    = DoubleSketchType;
+  using double_transform_type = typename double_sketch_type::transform_type;
+  using double_transform_ptr_type =
+      typename double_sketch_type::transform_ptr_type;
+
+  static_assert(
+      std::is_same<single_transform_type,
+                   typename double_transform_type::row_transform_type>::value);
+  static_assert(
+      std::is_same<single_transform_type,
+                   typename double_transform_type::col_transform_type>::value);
+
+  constexpr std::string name() const {
+    std::stringstream ss;
+    ss << double_transform_type::name() << " ygm power iteration check";
+    return ss.str();
+  }
+
+  void operator()(ygm::comm &world) const {
     const std::size_t row_count(256);
     const std::size_t col_count(row_count);
     const std::size_t transform_count(4);
     std::uint64_t     seed(4);
     bool              verbose(true);
-
-    // Using krowkee requires the selection of a sketch type for both a single
-    // and double-sided sketch, here encapsulated as `single_sketch_type` and
-    // `double_sketch_type`, respectively. We use the `SparseJLT` and
-    // `DoubleSparseJLT` types defined in the simple API in
-    // `krowkee/sketch.hpp`. These types have four template parameters:
-    //   1. the numeric type to be used by each register (here `double`),
-    //   2. a `std::size_t` parameter `range_size` indicating the number of
-    //      registers used by each instance of the internal transform,
-    //   3. a `std::size_t` parameter `replication_count` indicating the number
-    //      of instances of the transform to be used, and
-    //   4. a shared pointer type to be used by the shared transform object
-    //      (`std::shared_ptr` for shared memory implementations).
-    constexpr const std::size_t range_size        = 128;
-    constexpr const std::size_t replication_count = 4;
-    using register_type                           = double;
-    using single_sketch_type =
-        krowkee::sketch::SparseJLT<register_type, range_size, replication_count,
-                                   std::shared_ptr>;
-    using double_sketch_type =
-        krowkee::sketch::DoubleSparseJLT<register_type, range_size,
-                                         replication_count, std::shared_ptr>;
-
-    // Having established our sketch types, we must now create shared pointers
-    // to all of the associated sketch transforms. Each doubled transform is
-    // multiplied together with its neighbor in the form $AS S^TARR^TAQ$, for
-    // sketch transforms `S`, `R`, and `Q` and input matrix `A`. The sketch
-    // types includes typedefs of the transform and pointer types. This is where
-    // the random seed is used. Transforms of the same type sharing the same
-    // seed will behave identically. As this is a distributed memory code, we
-    // create a `std::shared_ptr` of the transform to be used to define the
-    // sketch data structures on each rank, ensuring that each uses the same
-    // transform.
-    using single_transform_type = typename single_sketch_type::transform_type;
-    using single_transform_ptr_type =
-        typename single_sketch_type::transform_ptr_type;
-    using double_transform_type = typename double_sketch_type::transform_type;
-    using double_transform_ptr_type =
-        typename double_sketch_type::transform_ptr_type;
-    // We verify that we did not make a mistake above, and both sketch types use
-    // the same transform type.
-    static_assert(std::is_same<
-                  single_transform_type,
-                  typename double_transform_type::row_transform_type>::value);
-    static_assert(std::is_same<
-                  single_transform_type,
-                  typename double_transform_type::col_transform_type>::value);
 
     // We create a vector of shared pointers for each of the individual
     // sketch transforms.
@@ -504,8 +480,8 @@ int main(int argc, char **argv) {
       single_transform_ptrs.push_back(
           std::make_shared<single_transform_type>(seed + i));
     }
-    // Using these shared pointers, we now create a vector of pointers to all of
-    // the two-sided sketch transforms.
+    // Using these shared pointers, we now create a vector of pointers to all
+    // of the two-sided sketch transforms.
     std::vector<double_transform_ptr_type> double_transform_ptrs;
     for (int i(0); i < transform_count - 1; ++i) {
       double_transform_ptrs.push_back(std::make_shared<double_transform_type>(
@@ -582,23 +558,66 @@ int main(int argc, char **argv) {
     world.cout0("A(5,7) = ", matrix_A(5, 7));
     world.cout0("A^", transform_count, "(5,7) = ", serial_product_exact(5, 7));
 
-    // We now compare the embedding vectors. In practice this could be done more
-    // efficiently, but this implementation suffices for illustration.
+    // We now compare the embedding vectors. In practice this could be done
+    // more efficiently, but this implementation suffices for illustration.
     const double srank = stable_rank(matrix_A);
     // :math:`\sqrt{2} \left ( (1 + 2\varepsilon)^{r - 1} \right )
     // \|A\|^r_{op}`.
     const double epsilon_expected = std::sqrt(
         16 *
-        (srank +
-         std::log((transform_count - 1) *
-                  single_sketch_type::transform_type::replication_count())) /
-        range_size);
+        (srank + std::log((transform_count - 1) *
+                          single_transform_type::replication_count())) /
+        single_transform_type::range_size());
 
     lemma_check(world, "serial", serial_product_exact, serial_product_iterative,
                 serial_product_streaming, epsilon_expected);
     lemma_check(world, "parallel", serial_product_exact,
                 parallel_product_iterative, parallel_product_streaming,
                 epsilon_expected);
+  }
+};
+
+template <typename SingleSketchType, typename DoubleSketchType>
+void perform_tests(ygm::comm &world) {
+  krowkee::print_line(world);
+  krowkee::print_line(world);
+  world.cout0("Testing ", DoubleSketchType::full_name());
+  world.cout0("\tUsing std::shared_ptr pointers");
+  krowkee::print_line(world);
+  krowkee::print_line(world);
+
+  world.cout0("\n");
+
+  krowkee::do_ygm_test<
+      power_iteration_check<SingleSketchType, DoubleSketchType>>(world, world);
+}
+
+int main(int argc, char **argv) {
+  ygm::comm world(&argc, &argv);
+  {
+    // Using krowkee requires the selection of a sketch type for both a single
+    // and double-sided sketch, here encapsulated as `single_sketch_type` and
+    // `double_sketch_type`, respectively. We use the `SparseJLT` and
+    // `DoubleSparseJLT` types defined in the simple API in
+    // `krowkee/sketch.hpp`. These types have four template parameters:
+    //   1. the numeric type to be used by each register (here `double`),
+    //   2. a `std::size_t` parameter `range_size` indicating the number of
+    //      registers used by each instance of the internal transform,
+    //   3. a `std::size_t` parameter `replication_count` indicating the number
+    //      of instances of the transform to be used, and
+    //   4. a shared pointer type to be used by the shared transform object
+    //      (`std::shared_ptr` for shared memory implementations).
+    constexpr const std::size_t range_size        = 128;
+    constexpr const std::size_t replication_count = 4;
+    using register_type                           = double;
+    using single_sketch_type =
+        krowkee::sketch::SparseJLT<register_type, range_size, replication_count,
+                                   std::shared_ptr>;
+    using double_sketch_type =
+        krowkee::sketch::DoubleSparseJLT<register_type, range_size,
+                                         replication_count, std::shared_ptr>;
+
+    perform_tests<single_sketch_type, double_sketch_type>(world);
   }
   return 0;
 }
