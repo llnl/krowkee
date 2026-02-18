@@ -146,9 +146,18 @@ void agreement_parallel_matrix(
   mae       = ygm::sum(mae, comm) / serial_matrix_AS.rows();
   max_error = ygm::max(max_error, comm);
 
-  comm.cout0("\t", name, " match? ", match, ", mae: ", mae,
-             ", max_error: ", max_error);
-  comm.cout0("");
+  bool mae_thresh       = mae < 1e-10;
+  bool max_error_thresh = max_error < 1e-10;
+  if (match == false || mae_thresh == false || max_error_thresh == false) {
+    comm.cout0("\t", name, " match? ", match, ", mae: ", mae,
+               ", max_error: ", max_error);
+    comm.cout0("");
+  }
+  CHECK_CONDITION(comm, match == true, name + " ranks agree");
+  CHECK_CONDITION(comm, mae_thresh == true,
+                  name + " mean absolute error < 1e-10");
+  CHECK_CONDITION(comm, max_error_thresh == true,
+                  name + " maximum absolute error < 1e-10");
 }
 
 template <typename DoubleSketchType>
@@ -256,8 +265,15 @@ std::vector<Eigen::MatrixXd> parallel_accumulate_double_matrices(
 }
 
 template <typename T>
-bool ranks_close(T &value, ygm::comm &comm, double rtol = 1e-5,
-                 double atol = 1e-8) {
+bool values_close(const T &lhs, const T &rhs, const double rtol = 1e-5,
+                  const double atol = 1e-8) {
+  return std::abs(lhs - rhs) <=
+         (atol + rtol * std::max(std::abs(lhs), std::abs(rhs)));
+}
+
+template <typename T>
+bool ranks_close(const T &value, ygm::comm &comm, const double rtol = 1e-5,
+                 const double atol = 1e-8) {
   T pos_min = ygm::min(value, comm);
   T neg_min = ygm::min(-value, comm);
   return std::abs(pos_min - neg_min) <=
@@ -285,12 +301,25 @@ void agreement_double_matrices(
   }
   mae /= serial_double_matrices.size();
 
-  bool success = ranks_close(match, comm) && ranks_close(mae, comm) &&
-                 ranks_close(max_error, comm);
+  bool mae_thresh       = mae < 1e-10;
+  bool max_error_thresh = max_error < 1e-10;
+  bool match_match      = ranks_close(match, comm) && ranks_close(mae, comm) &&
+                     ranks_close(max_error, comm);
 
-  comm.cout0("\tRanks agree? ", success, ", two-sided sketches match? ", match,
-             ", mae: ", mae, ", max_error: ", max_error);
-  comm.cout0("");
+  std::string name = "two-sided sketches";
+
+  if (match_match == false || match == false || mae_thresh == false ||
+      max_error_thresh == false) {
+    comm.cout0("\t", name, " ranks agree? ", match_match, ", match? ", match,
+               ", mae: ", mae, ", max_error: ", max_error);
+    comm.cout0("");
+  }
+  CHECK_CONDITION(comm, match_match == true, name + " ranks agree");
+  CHECK_CONDITION(comm, match == true, name + " no failures");
+  CHECK_CONDITION(comm, mae_thresh == true,
+                  name + " mean absolute error < 1e-10");
+  CHECK_CONDITION(comm, max_error_thresh == true,
+                  name + " maximum absolute error < 1e-10");
 }
 
 void agreement_matrices(ygm::comm &comm, const std::string &&name,
@@ -308,11 +337,23 @@ void agreement_matrices(ygm::comm &comm, const std::string &&name,
   bool max_error_success = ranks_close(max_error, comm);
   bool success           = match_success && mae_success && max_error_success;
 
-  comm.cout0("\t", name, ", ranks agree (match, mae, max error)? (",
-             match_success, ", ", mae_success, ", ", max_error_success,
-             "), partial products match? ", match, ", mae: ", mae,
-             ", max_error: ", max_error);
-  comm.cout0("");
+  bool mae_thresh       = mae < 1e-10;
+  bool max_error_thresh = max_error < 1e-10;
+
+  if (success == false || match == false || mae_thresh == false ||
+      max_error_thresh == false) {
+    comm.cout0("\t", name, ", ranks agree (match, mae, max error)? (",
+               match_success, ", ", mae_success, ", ", max_error_success,
+               "), partial products match? ", match, ", mae: ", mae,
+               ", max_error: ", max_error);
+    comm.cout0("");
+  }
+  CHECK_CONDITION(comm, success == true, name + " ranks agree");
+  CHECK_CONDITION(comm, match == true, name + " no failures");
+  CHECK_CONDITION(comm, mae_thresh == true,
+                  name + " mean absolute error < 1e-10");
+  CHECK_CONDITION(comm, max_error_thresh == true,
+                  name + " maximum absolute error < 1e-10");
 }
 
 Eigen::MatrixXd serial_multiplication_exact(const Eigen::MatrixXd &matrix_A,
@@ -360,8 +401,8 @@ Eigen::MatrixXd localize_AS(
       ygm::detail::mpi_typeof(double()), MPI_SUM, comm.get_mpi_comm()));
   comm.barrier();
 
-  comm.cout0("localized_AS dimensions: (", localized_AS.rows(), ", ",
-             localized_AS.cols(), ")");
+  // comm.cout0("localized_AS dimensions: (", localized_AS.rows(), ", ",
+  //            localized_AS.cols(), ")");
 
   return localized_AS;
 }
@@ -378,16 +419,26 @@ Eigen::MatrixXd parallel_multiplication_iterative(
   return parallel_product_iterative;
 }
 
-void lemma_check(ygm::comm &comm, const std::string &&name,
-                 const Eigen::MatrixXd &product_exact,
-                 const Eigen::MatrixXd &product_iterative,
-                 const Eigen::MatrixXd &product_streaming,
-                 const double           epsilon_expected) {
-  double success_rate_streaming(0.0);
-  double success_rate_iterative(0.0);
-  double epsilon_streaming(0.0);
-  double epsilon_iterative(0.0);
-  int    trials(0);
+struct lemma_results {
+  double success_rate_streaming;
+  double success_rate_iterative;
+  double epsilon_streaming;
+  double epsilon_iterative;
+
+  lemma_results()
+      : success_rate_streaming(0.0),
+        success_rate_iterative(0.0),
+        epsilon_streaming(0.0),
+        epsilon_iterative(0.0) {}
+};
+
+lemma_results lemma_check(ygm::comm &comm, const std::string &&name,
+                          const Eigen::MatrixXd &product_exact,
+                          const Eigen::MatrixXd &product_iterative,
+                          const Eigen::MatrixXd &product_streaming,
+                          const double           epsilon_expected) {
+  lemma_results results;
+  int           trials(0);
 
   for (int i(0); i < product_exact.rows(); ++i) {
     for (int j(i + 1); j < product_exact.rows(); ++j) {
@@ -399,17 +450,17 @@ void lemma_check(ygm::comm &comm, const std::string &&name,
       double dist_iterative =
           (product_iterative.row(i) - product_iterative.row(j)).lpNorm<2>();
       double error_iterative = std::abs(1.0 - dist_iterative / dist_exact);
-      epsilon_iterative += error_iterative;
+      results.epsilon_iterative += error_iterative;
       if (in_bounds(dist_exact, dist_iterative, epsilon_expected)) {
-        success_rate_iterative += 1.0;
+        results.success_rate_iterative += 1.0;
       }
       // compute distance between streaming embedding rows
       double dist_streaming =
           (product_streaming.row(i) - product_streaming.row(j)).lpNorm<2>();
       double error_streaming = std::abs(1.0 - dist_streaming / dist_exact);
-      epsilon_streaming += error_streaming;
+      results.epsilon_streaming += error_streaming;
       if (in_bounds(dist_exact, dist_streaming, epsilon_expected)) {
-        success_rate_streaming += 1.0;
+        results.success_rate_streaming += 1.0;
       }
       if (verbose && i == 199 && j == 230) {
         comm.cout0("\tlhs_embedding:\n", product_iterative.row(i), "\n",
@@ -426,20 +477,23 @@ void lemma_check(ygm::comm &comm, const std::string &&name,
     }
   }
 
-  success_rate_streaming /= trials;
-  success_rate_iterative /= trials;
-  epsilon_streaming /= trials;
-  epsilon_iterative /= trials;
+  results.success_rate_streaming /= trials;
+  results.success_rate_iterative /= trials;
+  results.epsilon_streaming /= trials;
+  results.epsilon_iterative /= trials;
 
-  comm.cout0("\n", name,
-             " power iteration approximate row distances guarantee (", trials,
-             " trials)");
-  comm.cout0("\titerative success rate / epsilon / expected = (",
-             success_rate_iterative, ", ", epsilon_iterative, ", ",
-             epsilon_expected, ")");
-  comm.cout0("\tstreaming success rate / epsilon / expected = (",
-             success_rate_streaming, ", ", epsilon_streaming, ", ",
-             epsilon_expected, ")\n");
+  if (verbose) {
+    comm.cout0("\n", name,
+               " power iteration approximate row distances guarantee (", trials,
+               " trials)");
+    comm.cout0("\titerative success rate / epsilon / expected = (",
+               results.success_rate_iterative, ", ", results.epsilon_iterative,
+               ", ", epsilon_expected, ")");
+    comm.cout0("\tstreaming success rate / epsilon / expected = (",
+               results.success_rate_streaming, ", ", results.epsilon_streaming,
+               ", ", epsilon_expected, ")\n");
+  }
+  return results;
 }
 
 template <typename SingleSketchType, typename DoubleSketchType>
@@ -471,7 +525,6 @@ struct power_iteration_check {
     const std::size_t col_count(row_count);
     const std::size_t transform_count(4);
     std::uint64_t     seed(4);
-    bool              verbose(true);
 
     // We create a vector of shared pointers for each of the individual
     // sketch transforms.
@@ -503,7 +556,7 @@ struct power_iteration_check {
         parallel_accumulate_AS<single_sketch_type, double_sketch_type>(
             world, matrix_A, single_transform_ptrs[0]);
     // We confirm that both implementations arrive at the same AS.
-    agreement_parallel_matrix("One-sided sketches", serial_matrix_AS,
+    agreement_parallel_matrix("one-sided sketches", serial_matrix_AS,
                               parallel_matrix_AS);
 
     // We create the serial two-sided matrices
@@ -529,7 +582,7 @@ struct power_iteration_check {
       parallel_product_partial *= parallel_double_matrices[i];
     }
     // We confirm that both implementations arrive at close partial products
-    agreement_matrices(world, "Partial products", serial_product_partial,
+    agreement_matrices(world, "partial products", serial_product_partial,
                        parallel_product_partial);
 
     // We compute the serial power iteration product.
@@ -544,7 +597,7 @@ struct power_iteration_check {
     Eigen::MatrixXd parallel_product_iterative =
         parallel_multiplication_iterative(localized_AS, matrix_A,
                                           serial_double_matrices.size());
-    agreement_matrices(world, "Iterative products", serial_product_iterative,
+    agreement_matrices(world, "iterative products", serial_product_iterative,
                        parallel_product_iterative);
 
     // We confirm that the serial and parallel streaming products are close.
@@ -552,11 +605,14 @@ struct power_iteration_check {
         serial_matrix_AS * serial_product_partial;
     Eigen::MatrixXd parallel_product_streaming =
         localized_AS * parallel_product_partial;
-    agreement_matrices(world, "Streaming products", serial_product_streaming,
+    agreement_matrices(world, "streaming products", serial_product_streaming,
                        parallel_product_streaming);
 
-    world.cout0("A(5,7) = ", matrix_A(5, 7));
-    world.cout0("A^", transform_count, "(5,7) = ", serial_product_exact(5, 7));
+    if (verbose) {
+      world.cout0("A(5,7) = ", matrix_A(5, 7));
+      world.cout0("A^", transform_count,
+                  "(5,7) = ", serial_product_exact(5, 7));
+    }
 
     // We now compare the embedding vectors. In practice this could be done
     // more efficiently, but this implementation suffices for illustration.
@@ -569,11 +625,46 @@ struct power_iteration_check {
                           single_transform_type::replication_count())) /
         single_transform_type::range_size());
 
-    lemma_check(world, "serial", serial_product_exact, serial_product_iterative,
-                serial_product_streaming, epsilon_expected);
-    lemma_check(world, "parallel", serial_product_exact,
-                parallel_product_iterative, parallel_product_streaming,
-                epsilon_expected);
+    lemma_results lemma_results_serial = lemma_check(
+        world, "serial", serial_product_exact, serial_product_iterative,
+        serial_product_streaming, epsilon_expected);
+    lemma_results lemma_results_parallel = lemma_check(
+        world, "parallel", serial_product_exact, parallel_product_iterative,
+        parallel_product_streaming, epsilon_expected);
+    bool success_rate_agreement_iterative =
+        lemma_results_serial.success_rate_iterative ==
+        lemma_results_parallel.success_rate_iterative;
+    bool success_rate_agreement_streaming =
+        lemma_results_serial.success_rate_streaming ==
+        lemma_results_parallel.success_rate_streaming;
+    bool epsilon_agreement_iterative =
+        values_close(lemma_results_serial.epsilon_iterative,
+                     lemma_results_parallel.epsilon_iterative);
+    bool epsilon_agreement_streaming =
+        values_close(lemma_results_serial.epsilon_streaming,
+                     lemma_results_parallel.epsilon_streaming);
+    CHECK_CONDITION(world, success_rate_agreement_iterative == true,
+                    "equal iterative success rates");
+    CHECK_CONDITION(world, success_rate_agreement_streaming == true,
+                    "equal streaming success rates");
+    CHECK_CONDITION(world, epsilon_agreement_iterative == true,
+                    "close iterative empirical epsilon rates");
+    CHECK_CONDITION(world, epsilon_agreement_streaming == true,
+                    "close streaming empirical epsilon rates");
+    bool epsilon_iterative_succeeds =
+        lemma_results_serial.epsilon_iterative <= epsilon_expected;
+    bool epsilon_streaming_succeeds =
+        lemma_results_serial.epsilon_streaming <= epsilon_expected;
+    CHECK_CONDITION(world, epsilon_agreement_iterative == true,
+                    "iterative empirical epsilon (" +
+                        std::to_string(lemma_results_serial.epsilon_iterative) +
+                        ") below threshold (" +
+                        std::to_string(epsilon_expected) + ")");
+    CHECK_CONDITION(world, epsilon_agreement_iterative == true,
+                    "streaming empirical epsilon (" +
+                        std::to_string(lemma_results_serial.epsilon_streaming) +
+                        ") below threshold (" +
+                        std::to_string(epsilon_expected) + ")");
   }
 };
 
