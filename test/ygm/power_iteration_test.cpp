@@ -32,6 +32,22 @@ bool in_bounds(const double tru, const double est, const double eps) {
   return (est < (1 + eps) * tru) && (est > (1 - eps) * tru);
 }
 
+template <typename T>
+bool values_close(const T &lhs, const T &rhs, const double rtol = 1e-5,
+                  const double atol = 1e-8) {
+  return std::abs(lhs - rhs) <=
+         (atol + rtol * std::max(std::abs(lhs), std::abs(rhs)));
+}
+
+template <typename T>
+bool ranks_close(const T &value, ygm::comm &comm, const double rtol = 1e-5,
+                 const double atol = 1e-8) {
+  T pos_min = ygm::min(value, comm);
+  T neg_min = ygm::min(-value, comm);
+  return std::abs(pos_min - neg_min) <=
+         (atol + rtol * std::max(std::abs(pos_min), std::abs(neg_min)));
+}
+
 template <typename SingleSketchType>
 Eigen::MatrixXd serial_accumulate_AS(
     const Eigen::MatrixXd                         &matrix_A,
@@ -146,18 +162,20 @@ void agreement_parallel_matrix(
   mae       = ygm::sum(mae, comm) / serial_matrix_AS.rows();
   max_error = ygm::max(max_error, comm);
 
-  bool mae_thresh       = mae < 1e-10;
-  bool max_error_thresh = max_error < 1e-10;
+  bool mae_thresh       = values_close(mae, 0.0);
+  bool max_error_thresh = values_close(max_error, 0.0);
   if (match == false || mae_thresh == false || max_error_thresh == false) {
     comm.cout0("\t", name, " match? ", match, ", mae: ", mae,
                ", max_error: ", max_error);
     comm.cout0("");
   }
   CHECK_CONDITION(comm, match == true, name + " ranks agree");
-  CHECK_CONDITION(comm, mae_thresh == true,
-                  name + " mean absolute error < 1e-10");
-  CHECK_CONDITION(comm, max_error_thresh == true,
-                  name + " maximum absolute error < 1e-10");
+  CHECK_CONDITION(
+      comm, mae_thresh == true,
+      name + " low mean absolute error (" + std::to_string(mae) + ")");
+  CHECK_CONDITION(
+      comm, max_error_thresh == true,
+      name + " low maximum absolute error (" + std::to_string(max_error) + ")");
 }
 
 template <typename DoubleSketchType>
@@ -264,22 +282,6 @@ std::vector<Eigen::MatrixXd> parallel_accumulate_double_matrices(
   return parallel_double_matrices;
 }
 
-template <typename T>
-bool values_close(const T &lhs, const T &rhs, const double rtol = 1e-5,
-                  const double atol = 1e-8) {
-  return std::abs(lhs - rhs) <=
-         (atol + rtol * std::max(std::abs(lhs), std::abs(rhs)));
-}
-
-template <typename T>
-bool ranks_close(const T &value, ygm::comm &comm, const double rtol = 1e-5,
-                 const double atol = 1e-8) {
-  T pos_min = ygm::min(value, comm);
-  T neg_min = ygm::min(-value, comm);
-  return std::abs(pos_min - neg_min) <=
-         (atol + rtol * std::max(std::abs(pos_min), std::abs(neg_min)));
-}
-
 void agreement_double_matrices(
     ygm::comm &comm, const std::vector<Eigen::MatrixXd> &serial_double_matrices,
     const std::vector<Eigen::MatrixXd> &parallel_double_matrices) {
@@ -301,8 +303,8 @@ void agreement_double_matrices(
   }
   mae /= serial_double_matrices.size();
 
-  bool mae_thresh       = mae < 1e-10;
-  bool max_error_thresh = max_error < 1e-10;
+  bool mae_thresh       = values_close(mae, 0.0);
+  bool max_error_thresh = values_close(max_error, 0.0);
   bool match_match      = ranks_close(match, comm) && ranks_close(mae, comm) &&
                      ranks_close(max_error, comm);
 
@@ -316,10 +318,12 @@ void agreement_double_matrices(
   }
   CHECK_CONDITION(comm, match_match == true, name + " ranks agree");
   CHECK_CONDITION(comm, match == true, name + " no failures");
-  CHECK_CONDITION(comm, mae_thresh == true,
-                  name + " mean absolute error < 1e-10");
-  CHECK_CONDITION(comm, max_error_thresh == true,
-                  name + " maximum absolute error < 1e-10");
+  CHECK_CONDITION(
+      comm, mae_thresh == true,
+      name + " low mean absolute error (" + std::to_string(mae) + ")");
+  CHECK_CONDITION(
+      comm, max_error_thresh == true,
+      name + " low maximum absolute error (" + std::to_string(max_error) + ")");
 }
 
 void agreement_matrices(ygm::comm &comm, const std::string &&name,
@@ -337,8 +341,8 @@ void agreement_matrices(ygm::comm &comm, const std::string &&name,
   bool max_error_success = ranks_close(max_error, comm);
   bool success           = match_success && mae_success && max_error_success;
 
-  bool mae_thresh       = mae < 1e-10;
-  bool max_error_thresh = max_error < 1e-10;
+  bool mae_thresh       = values_close(mae, 0.0);
+  bool max_error_thresh = values_close(max_error, 0.0);
 
   if (success == false || match == false || mae_thresh == false ||
       max_error_thresh == false) {
@@ -350,10 +354,12 @@ void agreement_matrices(ygm::comm &comm, const std::string &&name,
   }
   CHECK_CONDITION(comm, success == true, name + " ranks agree");
   CHECK_CONDITION(comm, match == true, name + " no failures");
-  CHECK_CONDITION(comm, mae_thresh == true,
-                  name + " mean absolute error < 1e-10");
-  CHECK_CONDITION(comm, max_error_thresh == true,
-                  name + " maximum absolute error < 1e-10");
+  CHECK_CONDITION(
+      comm, mae_thresh == true,
+      name + " low mean absolute error (" + std::to_string(mae) + ")");
+  CHECK_CONDITION(
+      comm, max_error_thresh == true,
+      name + " low maximum absolute error (" + std::to_string(max_error) + ")");
 }
 
 Eigen::MatrixXd serial_multiplication_exact(const Eigen::MatrixXd &matrix_A,
