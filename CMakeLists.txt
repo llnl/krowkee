@@ -37,7 +37,7 @@ set(YGM_FETCH_GIT
     "https://github.com/LLNL/ygm.git"
     CACHE STRING "GIT to fetch ygm")
 set(YGM_FETCH_TAG
-    "v0.9-dev"
+    "v0.10-dev"
     CACHE STRING "Tag to fetch ygm")
 set(EIGEN3_FETCH_GIT
     "https://github.com/PX4/eigen.git"
