@@ -12,11 +12,13 @@
 
 #include <Eigen/Dense>
 
+#include <getopt.h>
+#include <stdio.h>
+#include <unistd.h>
+
 #include <iostream>
 #include <random>
 #include <type_traits>
-
-static const bool verbose = false;
 
 double spectral_norm(const Eigen::MatrixXd &matrix) {
   Eigen::JacobiSVD<Eigen::MatrixXd> svd(
@@ -47,6 +49,18 @@ bool ranks_close(const T &value, ygm::comm &comm, const double rtol = 1e-5,
   return std::abs(pos_min - neg_min) <=
          (atol + rtol * std::max(std::abs(pos_min), std::abs(neg_min)));
 }
+
+/**
+ * Struct bundling the experiment parameters.
+ */
+struct Parameters {
+  std::uint64_t count;
+  std::uint64_t range_size;
+  std::uint64_t replication_count;
+  std::uint64_t transform_count;
+  std::uint64_t seed;
+  bool          verbose;
+};
 
 template <typename SingleSketchType>
 Eigen::MatrixXd serial_accumulate_AS(
@@ -133,15 +147,17 @@ ygm::container::map<int, Eigen::VectorXd> parallel_accumulate_AS(
 
 void agreement_parallel_matrix(
     const std::string &&name, const Eigen::MatrixXd &serial_matrix_AS,
-    const ygm::container::map<int, Eigen::VectorXd> &parallel_matrix_AS) {
+    const ygm::container::map<int, Eigen::VectorXd> &parallel_matrix_AS,
+    const Parameters                                &params) {
   ygm::comm &comm  = parallel_matrix_AS.comm();
   bool       match = true;
   double     mae(0.0);
   double     max_error(0.0);
-  parallel_matrix_AS.for_all([&serial_matrix_AS, &match, &mae, &max_error](
-                                 const int idx, const Eigen::VectorXd &lhs) {
+  parallel_matrix_AS.for_all([&serial_matrix_AS, &match, &mae, &max_error,
+                              &params](const int              idx,
+                                       const Eigen::VectorXd &lhs) {
     const auto &rhs = serial_matrix_AS(idx, Eigen::all);
-    if (verbose && idx == 199) {
+    if (params.verbose && idx == 199) {
       std::cout << "\tparallel embedding: " << std::endl;
       std::cout << lhs << std::endl;
       std::cout << "\tserial embedding: " << std::endl;
@@ -442,7 +458,8 @@ lemma_results lemma_check(ygm::comm &comm, const std::string &&name,
                           const Eigen::MatrixXd &product_exact,
                           const Eigen::MatrixXd &product_iterative,
                           const Eigen::MatrixXd &product_streaming,
-                          const double           epsilon_expected) {
+                          const double           epsilon_expected,
+                          const Parameters      &params) {
   lemma_results results;
   int           trials(0);
 
@@ -468,7 +485,7 @@ lemma_results lemma_check(ygm::comm &comm, const std::string &&name,
       if (in_bounds(dist_exact, dist_streaming, epsilon_expected)) {
         results.success_rate_streaming += 1.0;
       }
-      if (verbose && i == 199 && j == 230) {
+      if (params.verbose && i == 199 && j == 230) {
         comm.cout0("\tlhs_embedding:\n", product_iterative.row(i), "\n",
                    "\trhs_embedding:\n", product_iterative.row(j));
 
@@ -488,7 +505,7 @@ lemma_results lemma_check(ygm::comm &comm, const std::string &&name,
   results.epsilon_streaming /= trials;
   results.epsilon_iterative /= trials;
 
-  if (verbose) {
+  if (params.verbose) {
     comm.cout0("\n", name,
                " power iteration approximate row distances guarantee (", trials,
                " trials)");
@@ -526,23 +543,21 @@ struct power_iteration_check {
     return ss.str();
   }
 
-  void operator()(ygm::comm &world) const {
-    const std::size_t row_count(256);
+  void operator()(ygm::comm &world, const Parameters &params) const {
+    const std::size_t row_count(params.count);
     const std::size_t col_count(row_count);
-    const std::size_t transform_count(4);
-    std::uint64_t     seed(4);
 
     // We create a vector of shared pointers for each of the individual
     // sketch transforms.
     std::vector<single_transform_ptr_type> single_transform_ptrs;
-    for (int i(0); i < transform_count; ++i) {
+    for (int i(0); i < params.transform_count; ++i) {
       single_transform_ptrs.push_back(
-          std::make_shared<single_transform_type>(seed + i));
+          std::make_shared<single_transform_type>(params.seed + i));
     }
     // Using these shared pointers, we now create a vector of pointers to all
     // of the two-sided sketch transforms.
     std::vector<double_transform_ptr_type> double_transform_ptrs;
-    for (int i(0); i < transform_count - 1; ++i) {
+    for (int i(0); i < params.transform_count - 1; ++i) {
       double_transform_ptrs.push_back(std::make_shared<double_transform_type>(
           single_transform_ptrs[i], single_transform_ptrs[i + 1]));
     }
@@ -550,7 +565,7 @@ struct power_iteration_check {
     // We sample a random matrix to embed. Note that this is not implemented
     // efficiently, as this is a toy example and we will compute a ground
     // truth solution that is intractable for large matrices.
-    srand(seed);
+    srand(params.seed);
     static Eigen::MatrixXd matrix_A =
         Eigen::MatrixXd::Random(row_count, col_count);
 
@@ -563,7 +578,7 @@ struct power_iteration_check {
             world, matrix_A, single_transform_ptrs[0]);
     // We confirm that both implementations arrive at the same AS.
     agreement_parallel_matrix("one-sided sketches", serial_matrix_AS,
-                              parallel_matrix_AS);
+                              parallel_matrix_AS, params);
 
     // We create the serial two-sided matrices
     std::vector<Eigen::MatrixXd> serial_double_matrices =
@@ -614,9 +629,9 @@ struct power_iteration_check {
     agreement_matrices(world, "streaming products", serial_product_streaming,
                        parallel_product_streaming);
 
-    if (verbose) {
+    if (params.verbose) {
       world.cout0("A(5,7) = ", matrix_A(5, 7));
-      world.cout0("A^", transform_count,
+      world.cout0("A^", params.transform_count,
                   "(5,7) = ", serial_product_exact(5, 7));
     }
 
@@ -627,16 +642,16 @@ struct power_iteration_check {
     // \|A\|^r_{op}`.
     const double epsilon_expected = std::sqrt(
         16 *
-        (srank + std::log((transform_count - 1) *
+        (srank + std::log((params.transform_count - 1) *
                           single_transform_type::replication_count())) /
         single_transform_type::range_size());
 
     lemma_results lemma_results_serial = lemma_check(
         world, "serial", serial_product_exact, serial_product_iterative,
-        serial_product_streaming, epsilon_expected);
+        serial_product_streaming, epsilon_expected, params);
     lemma_results lemma_results_parallel = lemma_check(
         world, "parallel", serial_product_exact, parallel_product_iterative,
-        parallel_product_streaming, epsilon_expected);
+        parallel_product_streaming, epsilon_expected, params);
     bool success_rate_agreement_iterative =
         lemma_results_serial.success_rate_iterative ==
         lemma_results_parallel.success_rate_iterative;
@@ -674,11 +689,114 @@ struct power_iteration_check {
   }
 };
 
-template <typename SingleSketchType, typename DoubleSketchType>
-void perform_tests(ygm::comm &world) {
+void print_help(char *exe_name) {
+  std::cout
+      << "\nusage:  " << exe_name << "\n"
+      << "\t-c, --count <int>              - number of rows/cols in matrix\n"
+      << "\t-r, --range <int>              - range of sketch transform\n"
+      << "\t-R, --replication <int>        - number of tiled sketch "
+         "transforms\n"
+      << "\t-t, --transforms <int>         - number of transforms (i.e., power "
+         "of matrix)\n"
+      << "\t-s, --seed <int>               - random seed\n"
+      << "\t-v, --verbose                  - print additional debug "
+         "information.\n"
+      << "\t-h, --help                     - print this line and exit\n"
+      << std::endl;
+}
+
+void parse_args(int argc, char **argv, Parameters &params) {
+  int c;
+
+  while (1) {
+    int                  option_index(0);
+    static struct option long_options[] = {
+        {"count", required_argument, NULL, 'c'},
+        {"range", required_argument, NULL, 'r'},
+        {"replication", required_argument, NULL, 'R'},
+        {"transforms", required_argument, NULL, 't'},
+        {"seed", required_argument, NULL, 's'},
+        {"verbose", no_argument, NULL, 'v'},
+        {"help", no_argument, NULL, 'h'},
+        {NULL, 0, NULL, 0}};
+
+    int curind = optind;
+    c = getopt_long(argc, argv, "-:c:r:R:t:s:vh", long_options, &option_index);
+    if (c == -1) {
+      break;
+    }
+
+    switch (c) {
+      case 'h':
+        print_help(argv[0]);
+        exit(-1);
+        break;
+      case 0:
+        printf("long option %s", long_options[option_index].name);
+        if (optarg) {
+          printf(" with arg %s", optarg);
+        }
+        printf("\n");
+        break;
+      case 1:
+        printf("unused regular argument ignored %s\n", optarg);
+        break;
+      case 'c':
+        params.count = std::atol(optarg);
+        break;
+      case 'r':
+        std::cout << "Warning: setting range size on the command line is not "
+                     "currently supported for this test"
+                  << std::endl;
+        params.range_size = std::atoll(optarg);
+        break;
+      case 'R':
+        std::cout << "Warning: setting replication count on the command line "
+                     "is not currently supported for this test"
+                  << std::endl;
+        params.replication_count = std::atoll(optarg);
+        break;
+      case 't':
+        params.transform_count = std::atol(optarg);
+        break;
+      case 's':
+        params.seed = std::atoll(optarg);
+        break;
+      case 'v':
+        params.verbose = true;
+        break;
+      case '?':
+        if (optopt == 0) {
+          printf("Unknown long option \"%s\",", argv[curind]);
+        } else {
+          printf("Unknown option %c,", optopt);
+        }
+        printf(" consult %s --help\n", argv[0]);
+        break;
+      case ':':
+        printf("Missing argument for option -%c/--%s\n", optopt,
+               long_options[option_index].name);
+        break;
+      default:
+        printf("?? getopt returned character code 0%o ??\n", c);
+        break;
+    }
+  }
+}
+
+using register_type = double;
+
+template <std::size_t RangeSize, std::size_t ReplicationCount>
+void perform_tests(ygm::comm &world, const Parameters &params) {
+  using single_sketch_type =
+      krowkee::sketch::SparseJLT<register_type, RangeSize, ReplicationCount,
+                                 std::shared_ptr>;
+  using double_sketch_type =
+      krowkee::sketch::DoubleSparseJLT<register_type, RangeSize,
+                                       ReplicationCount, std::shared_ptr>;
   krowkee::print_line(world);
   krowkee::print_line(world);
-  world.cout0("Testing ", DoubleSketchType::full_name());
+  world.cout0("Testing ", double_sketch_type::full_name());
   world.cout0("\tUsing std::shared_ptr pointers");
   krowkee::print_line(world);
   krowkee::print_line(world);
@@ -686,7 +804,8 @@ void perform_tests(ygm::comm &world) {
   world.cout0("\n");
 
   krowkee::do_ygm_test<
-      power_iteration_check<SingleSketchType, DoubleSketchType>>(world, world);
+      power_iteration_check<single_sketch_type, double_sketch_type>>(
+      world, world, params);
 }
 
 int main(int argc, char **argv) {
@@ -704,17 +823,20 @@ int main(int argc, char **argv) {
     //      of instances of the transform to be used, and
     //   4. a shared pointer type to be used by the shared transform object
     //      (`std::shared_ptr` for shared memory implementations).
+
+    uint64_t                    count             = 256;
     constexpr const std::size_t range_size        = 128;
     constexpr const std::size_t replication_count = 4;
-    using register_type                           = double;
-    using single_sketch_type =
-        krowkee::sketch::SparseJLT<register_type, range_size, replication_count,
-                                   std::shared_ptr>;
-    using double_sketch_type =
-        krowkee::sketch::DoubleSparseJLT<register_type, range_size,
-                                         replication_count, std::shared_ptr>;
+    uint64_t                    transform_count   = 4;
+    std::uint64_t               seed              = 4;
+    bool                        verbose           = false;
+    bool                        do_all(argc == 1);
 
-    perform_tests<single_sketch_type, double_sketch_type>(world);
+    Parameters params{count,           range_size, replication_count,
+                      transform_count, seed,       verbose};
+    parse_args(argc, argv, params);
+
+    perform_tests<range_size, replication_count>(world, params);
   }
   return 0;
 }
