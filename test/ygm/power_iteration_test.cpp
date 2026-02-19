@@ -458,7 +458,8 @@ lemma_results lemma_check(ygm::comm &comm, const std::string &&name,
                           const Eigen::MatrixXd &product_exact,
                           const Eigen::MatrixXd &product_iterative,
                           const Eigen::MatrixXd &product_streaming,
-                          const double           epsilon_expected,
+                          const double           epsilon_expected_streaming,
+                          const double           epsilon_expected_iterative,
                           const Parameters      &params) {
   lemma_results results;
   int           trials(0);
@@ -474,7 +475,7 @@ lemma_results lemma_check(ygm::comm &comm, const std::string &&name,
           (product_iterative.row(i) - product_iterative.row(j)).lpNorm<2>();
       double error_iterative = std::abs(1.0 - dist_iterative / dist_exact);
       results.epsilon_iterative += error_iterative;
-      if (in_bounds(dist_exact, dist_iterative, epsilon_expected)) {
+      if (in_bounds(dist_exact, dist_iterative, epsilon_expected_iterative)) {
         results.success_rate_iterative += 1.0;
       }
       // compute distance between streaming embedding rows
@@ -482,20 +483,21 @@ lemma_results lemma_check(ygm::comm &comm, const std::string &&name,
           (product_streaming.row(i) - product_streaming.row(j)).lpNorm<2>();
       double error_streaming = std::abs(1.0 - dist_streaming / dist_exact);
       results.epsilon_streaming += error_streaming;
-      if (in_bounds(dist_exact, dist_streaming, epsilon_expected)) {
+      if (in_bounds(dist_exact, dist_streaming, epsilon_expected_streaming)) {
         results.success_rate_streaming += 1.0;
       }
       if (params.verbose && i == 199 && j == 230) {
         comm.cout0("\tlhs_embedding:\n", product_iterative.row(i), "\n",
                    "\trhs_embedding:\n", product_iterative.row(j));
 
-        comm.cout0("\t(", i, ",", j, ") exact ", dist_exact,
-                   ")\n\t\titerative (dist/error/success): (", dist_iterative,
-                   ", 1 +/- ", error_iterative, ", ",
-                   in_bounds(dist_exact, dist_iterative, epsilon_expected), ")",
-                   "\n\t\tstreaming (dist/error/success): (", dist_streaming,
-                   ", 1 +/- ", error_streaming, ", ",
-                   in_bounds(dist_exact, dist_streaming, epsilon_expected));
+        comm.cout0(
+            "\t(", i, ",", j, ") exact ", dist_exact,
+            ")\n\t\titerative (dist/error/success): (", dist_iterative,
+            ", 1 +/- ", error_iterative, ", ",
+            in_bounds(dist_exact, dist_iterative, epsilon_expected_iterative),
+            ")", "\n\t\tstreaming (dist/error/success): (", dist_streaming,
+            ", 1 +/- ", error_streaming, ", ",
+            in_bounds(dist_exact, dist_streaming, epsilon_expected_streaming));
       }
     }
   }
@@ -511,10 +513,10 @@ lemma_results lemma_check(ygm::comm &comm, const std::string &&name,
                " trials)");
     comm.cout0("\titerative success rate / epsilon / expected = (",
                results.success_rate_iterative, ", ", results.epsilon_iterative,
-               ", ", epsilon_expected, ")");
+               ", ", epsilon_expected_iterative, ")");
     comm.cout0("\tstreaming success rate / epsilon / expected = (",
                results.success_rate_streaming, ", ", results.epsilon_streaming,
-               ", ", epsilon_expected, ")\n");
+               ", ", epsilon_expected_streaming, ")\n");
   }
   return results;
 }
@@ -640,18 +642,24 @@ struct power_iteration_check {
     const double srank = stable_rank(matrix_A);
     // :math:`\sqrt{2} \left ( (1 + 2\varepsilon)^{r - 1} \right )
     // \|A\|^r_{op}`.
-    const double epsilon_expected = std::sqrt(
+    const double epsilon_expected_streaming = std::sqrt(
         16 *
         (srank + std::log((params.transform_count - 1) *
                           single_transform_type::replication_count())) /
         single_transform_type::range_size());
+    double expected_epsilon_iterative =
+        std::sqrt(16 * std::log(params.count) /
+                  (single_transform_type::range_size() *
+                   single_transform_type::range_size()));
 
     lemma_results lemma_results_serial = lemma_check(
         world, "serial", serial_product_exact, serial_product_iterative,
-        serial_product_streaming, epsilon_expected, params);
+        serial_product_streaming, epsilon_expected_streaming,
+        expected_epsilon_iterative, params);
     lemma_results lemma_results_parallel = lemma_check(
         world, "parallel", serial_product_exact, parallel_product_iterative,
-        parallel_product_streaming, epsilon_expected, params);
+        parallel_product_streaming, epsilon_expected_streaming,
+        expected_epsilon_iterative, params);
     bool success_rate_agreement_iterative =
         lemma_results_serial.success_rate_iterative ==
         lemma_results_parallel.success_rate_iterative;
@@ -673,19 +681,19 @@ struct power_iteration_check {
     CHECK_CONDITION(world, epsilon_agreement_streaming == true,
                     "close streaming empirical epsilon rates");
     bool epsilon_iterative_succeeds =
-        lemma_results_serial.epsilon_iterative <= epsilon_expected;
+        lemma_results_serial.epsilon_iterative <= expected_epsilon_iterative;
     bool epsilon_streaming_succeeds =
-        lemma_results_serial.epsilon_streaming <= epsilon_expected;
+        lemma_results_serial.epsilon_streaming <= epsilon_expected_streaming;
     CHECK_CONDITION(world, epsilon_agreement_iterative == true,
                     "iterative empirical epsilon (" +
                         std::to_string(lemma_results_serial.epsilon_iterative) +
                         ") below threshold (" +
-                        std::to_string(epsilon_expected) + ")");
+                        std::to_string(expected_epsilon_iterative) + ")");
     CHECK_CONDITION(world, epsilon_agreement_iterative == true,
                     "streaming empirical epsilon (" +
                         std::to_string(lemma_results_serial.epsilon_streaming) +
                         ") below threshold (" +
-                        std::to_string(epsilon_expected) + ")");
+                        std::to_string(epsilon_expected_streaming) + ")");
   }
 };
 
