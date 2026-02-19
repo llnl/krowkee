@@ -432,11 +432,10 @@ Eigen::MatrixXd localize_AS(
 Eigen::MatrixXd parallel_multiplication_iterative(
     Eigen::MatrixXd &localized_AS, const Eigen::MatrixXd &matrix_A,
     int double_matrix_count) {
-  Eigen::MatrixXd parallel_product_iterative = matrix_A;
-  for (int i(1); i < double_matrix_count; ++i) {
-    parallel_product_iterative *= matrix_A;
+  Eigen::MatrixXd parallel_product_iterative = localized_AS;
+  for (int i(0); i < double_matrix_count; ++i) {
+    parallel_product_iterative.transpose() *= matrix_A.transpose();
   }
-  parallel_product_iterative *= localized_AS;
 
   return parallel_product_iterative;
 }

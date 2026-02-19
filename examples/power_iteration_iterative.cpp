@@ -96,12 +96,11 @@ int main(int argc, char **argv) {
     }
   }
 
-  // We compute the iterative power iteration product.
-  Eigen::MatrixXd product_iterative = matrix_A;
-  for (int i(2); i < exponent; ++i) {
-    product_iterative *= matrix_A;
+  // We compute the iterative power iteration product as A(...A(AS)...)
+  Eigen::MatrixXd product_iterative = matrix_AS;
+  for (int i(1); i < exponent; ++i) {
+    product_iterative.transpose() *= matrix_A.transpose();
   }
-  product_iterative *= matrix_AS;
 
   // We compute the exact power iteration product.
   Eigen::MatrixXd product_exact = matrix_A;
