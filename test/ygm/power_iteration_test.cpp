@@ -157,7 +157,7 @@ void agreement_parallel_matrix(
                               &params](const int              idx,
                                        const Eigen::VectorXd &lhs) {
     const auto &rhs = serial_matrix_AS(idx, Eigen::all);
-    if (params.verbose && idx == 199) {
+    if (params.verbose && lhs.size() <= 32 && idx == 199) {
       std::cout << "\tparallel embedding: " << std::endl;
       std::cout << lhs << std::endl;
       std::cout << "\tserial embedding: " << std::endl;
@@ -486,9 +486,10 @@ lemma_results lemma_check(ygm::comm &comm, const std::string &&name,
         results.success_rate_streaming += 1.0;
       }
       if (params.verbose && i == 199 && j == 230) {
-        comm.cout0("\tlhs_embedding:\n", product_iterative.row(i), "\n",
-                   "\trhs_embedding:\n", product_iterative.row(j));
-
+        if (product_iterative.row(i).size() <= 32) {
+          comm.cout0("\tlhs_embedding:\n", product_iterative.row(i), "\n",
+                     "\trhs_embedding:\n", product_iterative.row(j));
+        }
         comm.cout0(
             "\t(", i, ",", j, ") exact ", dist_exact,
             ")\n\t\titerative (dist/error/success): (", dist_iterative,
