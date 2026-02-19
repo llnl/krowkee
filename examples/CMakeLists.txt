@@ -21,6 +21,7 @@ add_krowkee_example(sparse_jlt)
 add_krowkee_example(merge)
 add_krowkee_example(power_iteration)
 add_krowkee_example(power_iteration_iterative)
+add_krowkee_example(power_iteration_streaming)
 add_krowkee_example(verbose_templates)
 
 if (KROWKEE_USE_YGM)

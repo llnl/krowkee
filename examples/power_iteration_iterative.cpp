@@ -12,16 +12,6 @@
 #include <random>
 #include <type_traits>
 
-double spectral_norm(const Eigen::MatrixXd &matrix) {
-  Eigen::JacobiSVD<Eigen::MatrixXd> svd(
-      matrix, Eigen::ComputeThinU | Eigen::ComputeThinV);
-  return svd.singularValues()(0);
-}
-
-double stable_rank(const Eigen::MatrixXd &matrix) {
-  return matrix.squaredNorm() / std::pow(spectral_norm(matrix), 2);
-}
-
 bool in_bounds(const double tru, const double est, const double eps) {
   return (est < (1 + eps) * tru) && (est > (1 - eps) * tru);
 }
