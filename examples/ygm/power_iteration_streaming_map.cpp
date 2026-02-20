@@ -113,46 +113,12 @@ int main(int argc, char **argv) {
     static Eigen::MatrixXd matrix_A =
         Eigen::MatrixXd::Random(row_count, col_count);
 
-    // We create the parallel one-sided matrix object
-    ygm::container::map<int, Eigen::VectorXd> parallel_matrix_AS(world);
-
     // We create a ygm::map that will hold the sketches for each row of A. Note
     // that we use the transform pointer that conforms with the left-hand
     // transform of the zeroth two-sided sketch.
     single_sketch_type default_sketch(single_transform_ptrs[0]);
     ygm::container::map<int, single_sketch_type> single_sketches(
         world, default_sketch);
-
-    // here we simulate streaming over `matrix_A` where each rank gets a subset
-    // of the columns, even those in this example `matrix_A` is small enough
-    // that it is replicated to each rank.
-    for (int col_idx(0); col_idx < matrix_A.cols(); ++col_idx) {
-      if (world.rank() == (col_idx % world.size())) {
-        for (int row_idx(0); row_idx < matrix_A.rows(); ++row_idx) {
-          auto insert_lambda = [](const int row_idx, single_sketch_type &sketch,
-                                  const int col_idx, const double update) {
-            sketch.insert(col_idx, update);
-          };
-          single_sketches.async_visit(row_idx, insert_lambda, col_idx,
-                                      matrix_A(row_idx, col_idx));
-        }
-      }
-    }
-    world.barrier();
-
-    // Here we dump the distributed row sketches to a conforming ygm map
-    // containing Eigen vectors of each scaled sketch object.
-    single_sketches.for_all(
-        [&parallel_matrix_AS](const int idx, const single_sketch_type &sketch) {
-          Eigen::VectorXd embedding(sketch.size());
-          auto            scaled_registers = sketch.scaled_registers();
-          for (int i(0); i < scaled_registers.size(); ++i) {
-            embedding(static_cast<Eigen::Index>(i)) =
-                static_cast<double>(scaled_registers[i]);
-          }
-          parallel_matrix_AS.async_insert(idx, embedding);
-        });
-    world.barrier();
 
     // We create the parallel two-sided matrices
     std::vector<Eigen::MatrixXd> parallel_double_matrices;
@@ -164,22 +130,25 @@ int main(int argc, char **argv) {
       parallel_double_sketches.emplace_back(double_transform_ptr);
     }
 
-    // We apply the double sketches to each element of `matrix_A` in a single
-    // pass. In practice this could be interleaved with the accumulation of AS.
+    // here we simulate streaming over `matrix_A` where each rank gets a subset
+    // of the columns, even those in this example `matrix_A` is small enough
+    // that it is replicated to each rank. We apply the both the single and
+    // double sketches to each element of `matrix_A` in a single pass.
     for (int col_idx(0); col_idx < matrix_A.cols(); ++col_idx) {
       if (world.rank() == (col_idx % world.size())) {
         for (int row_idx(0); row_idx < matrix_A.rows(); ++row_idx) {
-          auto insert_lambda = [](const int              row_idx,
-                                  const Eigen::VectorXd &payload,
+          auto insert_lambda = [](const int row_idx, single_sketch_type &sketch,
                                   const int col_idx, const double update) {
+            // insert `(col_idx) <- update` into `row_idx`'s vector sketch
+            sketch.insert(col_idx, update);
             // insert `(row_idx, col_idx) <- update' into all matrix
             // sketches.
             for (double_sketch_type &double_sketch : parallel_double_sketches) {
               double_sketch.insert({row_idx, col_idx}, update);
             }
           };
-          parallel_matrix_AS.async_visit(row_idx, insert_lambda, col_idx,
-                                         matrix_A(row_idx, col_idx));
+          single_sketches.async_visit(row_idx, insert_lambda, col_idx,
+                                      matrix_A(row_idx, col_idx));
         }
       }
     }
@@ -189,8 +158,6 @@ int main(int argc, char **argv) {
     // will hold their local updates, and then we allreduce the matrices so that
     // each rank holds the fully sketched matrices.
     for (int i(0); i < parallel_double_sketches.size(); ++i) {
-      // for (const DoubleSketchType &double_sketch : parallel_double_sketches)
-      // { parallel_double_matrices.push_back(double_sketch.scaled_registers());
       // using a const reference to avoid an extra copy
       const Eigen::MatrixXd &double_matrix =
           parallel_double_sketches[i].container().registers();
@@ -212,12 +179,20 @@ int main(int argc, char **argv) {
       parallel_product_partial *= parallel_double_matrices[i];
     }
 
-    // We compute the serial exact power iteration product. We will check our
-    // embedded results against this.
-    Eigen::MatrixXd serial_product_exact = matrix_A;
-    for (int i(0); i < parallel_double_matrices.size(); ++i) {
-      serial_product_exact *= matrix_A;
-    }
+    // Here we dump the distributed row sketches to a conforming ygm map
+    // containing Eigen vectors of each scaled sketch object.
+    ygm::container::map<int, Eigen::VectorXd> parallel_matrix_AS(world);
+    single_sketches.for_all(
+        [&parallel_matrix_AS](const int idx, const single_sketch_type &sketch) {
+          Eigen::VectorXd embedding(sketch.size());
+          auto            scaled_registers = sketch.scaled_registers();
+          for (int i(0); i < scaled_registers.size(); ++i) {
+            embedding(static_cast<Eigen::Index>(i)) =
+                static_cast<double>(scaled_registers[i]);
+          }
+          parallel_matrix_AS.async_insert(idx, embedding);
+        });
+    world.barrier();
 
     // We localize the AS matrix.
     Eigen::MatrixXd localized_AS_piece =
@@ -240,6 +215,18 @@ int main(int argc, char **argv) {
     // We compute the parallel streaming product.
     Eigen::MatrixXd parallel_product_streaming =
         localized_AS * parallel_product_partial;
+
+    // In practice the embedding would be done here, and we could use
+    // `parallel_product_streaming` as an embedding of the rows for downstream
+    // applications. In this example, we compute the exact product in serial and
+    // show that the row distances are approximately, if coarsely, preserved.
+
+    // We compute the serial exact power iteration product. We will check our
+    // embedded results against this.
+    Eigen::MatrixXd serial_product_exact = matrix_A;
+    for (int i(0); i < parallel_double_matrices.size(); ++i) {
+      serial_product_exact *= matrix_A;
+    }
 
     if (verbose) {
       world.cout0("A(5,7) = ", matrix_A(5, 7));
