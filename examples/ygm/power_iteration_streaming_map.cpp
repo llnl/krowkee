@@ -34,230 +34,6 @@ bool in_bounds(const double tru, const double est, const double eps) {
   return (est < (1 + eps) * tru) && (est > (1 - eps) * tru);
 }
 
-template <typename T>
-bool values_close(const T &lhs, const T &rhs, const double rtol = 1e-5,
-                  const double atol = 1e-8) {
-  return std::abs(lhs - rhs) <=
-         (atol + rtol * std::max(std::abs(lhs), std::abs(rhs)));
-}
-
-template <typename T>
-bool ranks_close(const T &value, ygm::comm &comm, const double rtol = 1e-5,
-                 const double atol = 1e-8) {
-  T pos_min = ygm::min(value, comm);
-  T neg_min = ygm::min(-value, comm);
-  return std::abs(pos_min - neg_min) <=
-         (atol + rtol * std::max(std::abs(pos_min), std::abs(neg_min)));
-}
-
-template <typename SingleSketchType, typename DoubleSketchType>
-ygm::container::map<int, Eigen::VectorXd> parallel_accumulate_AS(
-    ygm::comm &comm, const Eigen::MatrixXd &matrix_A,
-    typename SingleSketchType::transform_ptr_type &single_transform_ptr) {
-  using single_sketch_type = SingleSketchType;
-
-  // Eigen::VectorXd default_embedding = Eigen::VectorXd::Zero(matrix_A.cols());
-  ygm::container::map<int, Eigen::VectorXd> parallel_matrix_AS(comm);
-
-  // We create a ygm::map that will hold the sketches for each row of A.
-  single_sketch_type default_sketch(single_transform_ptr);
-  ygm::container::map<int, single_sketch_type> single_sketches(comm,
-                                                               default_sketch);
-
-  for (int col_idx(0); col_idx < matrix_A.cols(); ++col_idx) {
-    if (comm.rank() == (col_idx % comm.size())) {
-      for (int row_idx(0); row_idx < matrix_A.rows(); ++row_idx) {
-        auto insert_lambda = [](const int row_idx, single_sketch_type &sketch,
-                                const int col_idx, const double update) {
-          sketch.insert(col_idx, update);
-        };
-        single_sketches.async_visit(row_idx, insert_lambda, col_idx,
-                                    matrix_A(row_idx, col_idx));
-      }
-    }
-  }
-  comm.barrier();
-
-  single_sketches.for_all(
-      [&parallel_matrix_AS](const int idx, const single_sketch_type &sketch) {
-        Eigen::VectorXd embedding(sketch.size());
-        auto            scaled_registers = sketch.scaled_registers();
-        for (int i(0); i < scaled_registers.size(); ++i) {
-          embedding(static_cast<Eigen::Index>(i)) =
-              static_cast<double>(scaled_registers[i]);
-        }
-        parallel_matrix_AS.async_insert(idx, embedding);
-      });
-  comm.barrier();
-
-  return parallel_matrix_AS;
-}
-
-template <typename DoubleSketchType>
-std::vector<Eigen::MatrixXd> parallel_accumulate_double_matrices(
-    const Eigen::MatrixXd                     &matrix_A,
-    ygm::container::map<int, Eigen::VectorXd> &parallel_matrix_AS,
-    std::vector<typename DoubleSketchType::transform_ptr_type>
-        &double_transform_ptrs) {
-  using double_sketch_type = DoubleSketchType;
-  using double_transform_ptr_type =
-      typename DoubleSketchType::transform_ptr_type;
-
-  ygm::comm &comm = parallel_matrix_AS.comm();
-
-  // We also create local double-sided sketches that will hold the double
-  // sided embeddings.
-  static std::vector<double_sketch_type> parallel_double_sketches;
-  for (const double_transform_ptr_type &double_transform_ptr :
-       double_transform_ptrs) {
-    parallel_double_sketches.emplace_back(double_transform_ptr);
-  }
-
-  // We apply the double sketches to each element of `matrix_A` in a single
-  // pass. In practice this could be interleaved with the accumulation of AS.
-  for (int col_idx(0); col_idx < matrix_A.cols(); ++col_idx) {
-    if (comm.rank() == (col_idx % comm.size())) {
-      for (int row_idx(0); row_idx < matrix_A.rows(); ++row_idx) {
-        auto insert_lambda = [](const int              row_idx,
-                                const Eigen::VectorXd &payload,
-                                const int col_idx, const double update) {
-          // insert `(row_idx, col_idx) <- update' into all matrix
-          // sketches.
-          for (double_sketch_type &double_sketch : parallel_double_sketches) {
-            double_sketch.insert({row_idx, col_idx}, update);
-          }
-        };
-        parallel_matrix_AS.async_visit(row_idx, insert_lambda, col_idx,
-                                       matrix_A(row_idx, col_idx));
-      }
-    }
-  }
-  comm.barrier();
-
-  // We dump the contents of the S^tAR embeddings to Eigen matrices.
-  std::vector<Eigen::MatrixXd> parallel_double_matrices;
-  for (int i(0); i < parallel_double_sketches.size(); ++i) {
-    // for (const DoubleSketchType &double_sketch : parallel_double_sketches) {
-    // parallel_double_matrices.push_back(double_sketch.scaled_registers());
-    // using a const reference to avoid an extra copy
-    const Eigen::MatrixXd &double_matrix =
-        parallel_double_sketches[i].container().registers();
-    // it is very important that the dummy matrix have the the correct shapes!
-    parallel_double_matrices.push_back(
-        Eigen::MatrixXd::Zero(double_matrix.rows(), double_matrix.cols()));
-    YGM_ASSERT_MPI(MPI_Allreduce(
-        double_matrix.data(), parallel_double_matrices[i].data(),
-        double_matrix.rows() * double_matrix.cols(),
-        ygm::detail::mpi_typeof(double()), MPI_SUM, comm.get_mpi_comm()));
-    comm.barrier();
-    // apply scaling factor
-    parallel_double_matrices[i] /=
-        DoubleSketchType::transform_type::scaling_factor;
-  }
-
-  return parallel_double_matrices;
-}
-
-Eigen::MatrixXd serial_multiplication_exact(const Eigen::MatrixXd &matrix_A,
-                                            int double_matrix_count) {
-  // We compute the exact power iteration product.
-  Eigen::MatrixXd serial_product_exact = matrix_A;
-  for (int i(0); i < double_matrix_count; ++i) {
-    serial_product_exact *= matrix_A;
-  }
-  return serial_product_exact;
-}
-
-Eigen::MatrixXd localize_AS(
-    ygm::container::map<int, Eigen::VectorXd> &parallel_matrix_AS,
-    int                                        embedding_size) {
-  ygm::comm &comm = parallel_matrix_AS.comm();
-  // We compute the iterative power iteration product. If matrix_A were large,
-  // it would be necessary to implement this product differently.
-  Eigen::MatrixXd localized_AS_piece =
-      Eigen::MatrixXd::Zero(parallel_matrix_AS.size(), embedding_size);
-  Eigen::MatrixXd localized_AS =
-      Eigen::MatrixXd::Zero(parallel_matrix_AS.size(), embedding_size);
-
-  parallel_matrix_AS.for_all(
-      [&localized_AS_piece](const int &idx, const Eigen::VectorXd &row) {
-        localized_AS_piece.row(idx) = row;
-      });
-  comm.barrier();
-
-  YGM_ASSERT_MPI(MPI_Allreduce(
-      localized_AS_piece.data(), localized_AS.data(),
-      localized_AS_piece.rows() * localized_AS_piece.cols(),
-      ygm::detail::mpi_typeof(double()), MPI_SUM, comm.get_mpi_comm()));
-  comm.barrier();
-
-  // comm.cout0("localized_AS dimensions: (", localized_AS.rows(), ", ",
-  //            localized_AS.cols(), ")");
-
-  return localized_AS;
-}
-
-struct lemma_results {
-  double success_rate_streaming;
-  double success_rate_iterative;
-  double epsilon_streaming;
-  double epsilon_iterative;
-
-  lemma_results()
-      : success_rate_streaming(0.0),
-        success_rate_iterative(0.0),
-        epsilon_streaming(0.0),
-        epsilon_iterative(0.0) {}
-};
-
-lemma_results lemma_check(ygm::comm &comm, const std::string &&name,
-                          const Eigen::MatrixXd &product_exact,
-                          const Eigen::MatrixXd &product_streaming,
-                          const double           epsilon_expected_streaming,
-                          const bool             verbose) {
-  lemma_results results;
-  int           trials(0);
-
-  for (int i(0); i < product_exact.rows(); ++i) {
-    for (int j(i + 1); j < product_exact.rows(); ++j) {
-      ++trials;
-      // compute exact distance between power iteration rows
-      double dist_exact =
-          (product_exact.row(i) - product_exact.row(j)).lpNorm<2>();
-      // compute distance between streaming embedding rows
-      double dist_streaming =
-          (product_streaming.row(i) - product_streaming.row(j)).lpNorm<2>();
-      double error_streaming = std::abs(1.0 - dist_streaming / dist_exact);
-      results.epsilon_streaming += error_streaming;
-      if (in_bounds(dist_exact, dist_streaming, epsilon_expected_streaming)) {
-        results.success_rate_streaming += 1.0;
-      }
-      if (verbose && i == 199 && j == 230) {
-        comm.cout0(
-            "\t(", i, ",", j, ") exact ", dist_exact,
-            ")\n\t\tstreaming (dist/error/success): (", dist_streaming,
-            ", 1 +/- ", error_streaming, ", ",
-            in_bounds(dist_exact, dist_streaming, epsilon_expected_streaming));
-      }
-    }
-  }
-
-  results.success_rate_streaming /= trials;
-  results.success_rate_iterative /= trials;
-  results.epsilon_streaming /= trials;
-  results.epsilon_iterative /= trials;
-
-  if (verbose) {
-    comm.cout0("\n", name,
-               " power iteration approximate row distances guarantee (", trials,
-               " trials)");
-    comm.cout0("\tstreaming success rate / epsilon / expected = (",
-               results.success_rate_streaming, ", ", results.epsilon_streaming,
-               ", ", epsilon_expected_streaming, ")\n");
-  }
-  return results;
-}
-
 int main(int argc, char **argv) {
   ygm::comm world(&argc, &argv);
   {
@@ -338,14 +114,97 @@ int main(int argc, char **argv) {
         Eigen::MatrixXd::Random(row_count, col_count);
 
     // We create the parallel one-sided matrix object
-    ygm::container::map<int, Eigen::VectorXd> parallel_matrix_AS =
-        parallel_accumulate_AS<single_sketch_type, double_sketch_type>(
-            world, matrix_A, single_transform_ptrs[0]);
+    ygm::container::map<int, Eigen::VectorXd> parallel_matrix_AS(world);
+
+    // We create a ygm::map that will hold the sketches for each row of A. Note
+    // that we use the transform pointer that conforms with the left-hand
+    // transform of the zeroth two-sided sketch.
+    single_sketch_type default_sketch(single_transform_ptrs[0]);
+    ygm::container::map<int, single_sketch_type> single_sketches(
+        world, default_sketch);
+
+    // here we simulate streaming over `matrix_A` where each rank gets a subset
+    // of the columns, even those in this example `matrix_A` is small enough
+    // that it is replicated to each rank.
+    for (int col_idx(0); col_idx < matrix_A.cols(); ++col_idx) {
+      if (world.rank() == (col_idx % world.size())) {
+        for (int row_idx(0); row_idx < matrix_A.rows(); ++row_idx) {
+          auto insert_lambda = [](const int row_idx, single_sketch_type &sketch,
+                                  const int col_idx, const double update) {
+            sketch.insert(col_idx, update);
+          };
+          single_sketches.async_visit(row_idx, insert_lambda, col_idx,
+                                      matrix_A(row_idx, col_idx));
+        }
+      }
+    }
+    world.barrier();
+
+    // Here we dump the distributed row sketches to a conforming ygm map
+    // containing Eigen vectors of each scaled sketch object.
+    single_sketches.for_all(
+        [&parallel_matrix_AS](const int idx, const single_sketch_type &sketch) {
+          Eigen::VectorXd embedding(sketch.size());
+          auto            scaled_registers = sketch.scaled_registers();
+          for (int i(0); i < scaled_registers.size(); ++i) {
+            embedding(static_cast<Eigen::Index>(i)) =
+                static_cast<double>(scaled_registers[i]);
+          }
+          parallel_matrix_AS.async_insert(idx, embedding);
+        });
+    world.barrier();
 
     // We create the parallel two-sided matrices
-    std::vector<Eigen::MatrixXd> parallel_double_matrices =
-        parallel_accumulate_double_matrices<double_sketch_type>(
-            matrix_A, parallel_matrix_AS, double_transform_ptrs);
+    std::vector<Eigen::MatrixXd> parallel_double_matrices;
+    // We also create local double-sided sketches that will hold the double
+    // sided embeddings.
+    static std::vector<double_sketch_type> parallel_double_sketches;
+    for (const double_transform_ptr_type &double_transform_ptr :
+         double_transform_ptrs) {
+      parallel_double_sketches.emplace_back(double_transform_ptr);
+    }
+
+    // We apply the double sketches to each element of `matrix_A` in a single
+    // pass. In practice this could be interleaved with the accumulation of AS.
+    for (int col_idx(0); col_idx < matrix_A.cols(); ++col_idx) {
+      if (world.rank() == (col_idx % world.size())) {
+        for (int row_idx(0); row_idx < matrix_A.rows(); ++row_idx) {
+          auto insert_lambda = [](const int              row_idx,
+                                  const Eigen::VectorXd &payload,
+                                  const int col_idx, const double update) {
+            // insert `(row_idx, col_idx) <- update' into all matrix
+            // sketches.
+            for (double_sketch_type &double_sketch : parallel_double_sketches) {
+              double_sketch.insert({row_idx, col_idx}, update);
+            }
+          };
+          parallel_matrix_AS.async_visit(row_idx, insert_lambda, col_idx,
+                                         matrix_A(row_idx, col_idx));
+        }
+      }
+    }
+    world.barrier();
+
+    // We dump the contents of the S^tAR embeddings to Eigen matrices. Each rank
+    // will hold their local updates, and then we allreduce the matrices so that
+    // each rank holds the fully sketched matrices.
+    for (int i(0); i < parallel_double_sketches.size(); ++i) {
+      // for (const DoubleSketchType &double_sketch : parallel_double_sketches)
+      // { parallel_double_matrices.push_back(double_sketch.scaled_registers());
+      // using a const reference to avoid an extra copy
+      const Eigen::MatrixXd &double_matrix =
+          parallel_double_sketches[i].container().registers();
+      // it is very important that the dummy matrix have the the correct shapes!
+      parallel_double_matrices.push_back(
+          Eigen::MatrixXd::Zero(double_matrix.rows(), double_matrix.cols()));
+      YGM_ASSERT_MPI(MPI_Allreduce(
+          double_matrix.data(), parallel_double_matrices[i].data(),
+          double_matrix.rows() * double_matrix.cols(),
+          ygm::detail::mpi_typeof(double()), MPI_SUM, world.get_mpi_comm()));
+      world.barrier();
+      // apply scaling factor
+      parallel_double_matrices[i] /= double_transform_type::scaling_factor;
+    }
 
     // We compute the partial products of the two-sided matrices.
     Eigen::MatrixXd parallel_product_partial = parallel_double_matrices[0];
@@ -353,13 +212,30 @@ int main(int argc, char **argv) {
       parallel_product_partial *= parallel_double_matrices[i];
     }
 
-    // We compute the serial exact power iteration product.
-    Eigen::MatrixXd serial_product_exact =
-        serial_multiplication_exact(matrix_A, parallel_double_matrices.size());
+    // We compute the serial exact power iteration product. We will check our
+    // embedded results against this.
+    Eigen::MatrixXd serial_product_exact = matrix_A;
+    for (int i(0); i < parallel_double_matrices.size(); ++i) {
+      serial_product_exact *= matrix_A;
+    }
 
     // We localize the AS matrix.
+    Eigen::MatrixXd localized_AS_piece =
+        Eigen::MatrixXd::Zero(parallel_matrix_AS.size(), embedding_size);
     Eigen::MatrixXd localized_AS =
-        localize_AS(parallel_matrix_AS, range_size * replication_count);
+        Eigen::MatrixXd::Zero(parallel_matrix_AS.size(), embedding_size);
+
+    parallel_matrix_AS.for_all(
+        [&localized_AS_piece](const int &idx, const Eigen::VectorXd &row) {
+          localized_AS_piece.row(idx) = row;
+        });
+    world.barrier();
+
+    YGM_ASSERT_MPI(MPI_Allreduce(
+        localized_AS_piece.data(), localized_AS.data(),
+        localized_AS_piece.rows() * localized_AS_piece.cols(),
+        ygm::detail::mpi_typeof(double()), MPI_SUM, world.get_mpi_comm()));
+    world.barrier();
 
     // We compute the parallel streaming product.
     Eigen::MatrixXd parallel_product_streaming =
@@ -385,8 +261,46 @@ int main(int argc, char **argv) {
                           single_transform_type::replication_count())) /
         single_transform_type::range_size());
 
-    lemma_results lemma_results_parallel = lemma_check(
-        world, "parallel", serial_product_exact, parallel_product_streaming,
-        epsilon_expected_streaming, verbose);
+    double success_rate_streaming = 0.0;
+    double epsilon_streaming      = 0.0;
+    int    trials                 = 0;
+
+    for (int i(0); i < serial_product_exact.rows(); ++i) {
+      for (int j(i + 1); j < serial_product_exact.rows(); ++j) {
+        ++trials;
+        // compute exact distance between power iteration rows
+        double dist_exact =
+            (serial_product_exact.row(i) - serial_product_exact.row(j))
+                .lpNorm<2>();
+        // compute distance between streaming embedding rows
+        double dist_streaming = (parallel_product_streaming.row(i) -
+                                 parallel_product_streaming.row(j))
+                                    .lpNorm<2>();
+        double error_streaming = std::abs(1.0 - dist_streaming / dist_exact);
+        epsilon_streaming += error_streaming;
+        if (in_bounds(dist_exact, dist_streaming, epsilon_expected_streaming)) {
+          success_rate_streaming += 1.0;
+        }
+        if (verbose && i == 199 && j == 230) {
+          world.cout0("\t(", i, ",", j, ") exact ", dist_exact,
+                      ")\n\t\tstreaming (dist/error/success): (",
+                      dist_streaming, ", 1 +/- ", error_streaming, ", ",
+                      in_bounds(dist_exact, dist_streaming,
+                                epsilon_expected_streaming));
+        }
+      }
+    }
+
+    success_rate_streaming /= trials;
+    epsilon_streaming /= trials;
+
+    if (verbose) {
+      world.cout0(
+          "\nparallel power iteration approximate row distances guarantee (",
+          trials, " trials)");
+      world.cout0("\tstreaming success rate / epsilon / expected = (",
+                  success_rate_streaming, ", ", epsilon_streaming, ", ",
+                  epsilon_expected_streaming, ")\n");
+    }
   }
 }
