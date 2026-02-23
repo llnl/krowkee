@@ -41,7 +41,7 @@ int main(int argc, char **argv) {
     const std::size_t col_count(row_count);
     const std::size_t transform_count(4);
     std::uint64_t     seed(4);
-    bool              verbose(true);
+    static bool       verbose(true);
 
     // Using krowkee requires the selection of a sketch type for both a single
     // and double-sided sketch, here encapsulated as `single_sketch_type` and
@@ -179,42 +179,25 @@ int main(int argc, char **argv) {
       parallel_product_partial *= parallel_double_matrices[i];
     }
 
-    // Here we dump the distributed row sketches to a conforming ygm map
-    // containing Eigen vectors of each scaled sketch object.
-    ygm::container::map<int, Eigen::VectorXd> parallel_matrix_AS(world);
+    // We compute the parallel streaming product.
+    ygm::container::map<int, Eigen::VectorXd> parallel_product_streaming(world);
     single_sketches.for_all(
-        [&parallel_matrix_AS](const int idx, const single_sketch_type &sketch) {
+        [&parallel_product_streaming, &parallel_product_partial](
+            const int idx, const single_sketch_type &sketch) {
+          // dump the scaled sketch to an Eigen vector.
           Eigen::VectorXd embedding(sketch.size());
           auto            scaled_registers = sketch.scaled_registers();
           for (int i(0); i < scaled_registers.size(); ++i) {
             embedding(static_cast<Eigen::Index>(i)) =
                 static_cast<double>(scaled_registers[i]);
           }
-          parallel_matrix_AS.async_insert(idx, embedding);
+          // multiply by the partial product and store the row product. Note
+          // that Eigen assumes all vectors are Nx1 matrices, so the transpose
+          // is required for correctness.
+          parallel_product_streaming.async_insert(
+              idx, embedding.transpose() * parallel_product_partial);
         });
     world.barrier();
-
-    // We localize the AS matrix.
-    Eigen::MatrixXd localized_AS_piece =
-        Eigen::MatrixXd::Zero(parallel_matrix_AS.size(), embedding_size);
-    Eigen::MatrixXd localized_AS =
-        Eigen::MatrixXd::Zero(parallel_matrix_AS.size(), embedding_size);
-
-    parallel_matrix_AS.for_all(
-        [&localized_AS_piece](const int &idx, const Eigen::VectorXd &row) {
-          localized_AS_piece.row(idx) = row;
-        });
-    world.barrier();
-
-    YGM_ASSERT_MPI(MPI_Allreduce(
-        localized_AS_piece.data(), localized_AS.data(),
-        localized_AS_piece.rows() * localized_AS_piece.cols(),
-        ygm::detail::mpi_typeof(double()), MPI_SUM, world.get_mpi_comm()));
-    world.barrier();
-
-    // We compute the parallel streaming product.
-    Eigen::MatrixXd parallel_product_streaming =
-        localized_AS * parallel_product_partial;
 
     // In practice the embedding would be done here, and we could use
     // `parallel_product_streaming` as an embedding of the rows for downstream
@@ -223,7 +206,7 @@ int main(int argc, char **argv) {
 
     // We compute the serial exact power iteration product. We will check our
     // embedded results against this.
-    Eigen::MatrixXd serial_product_exact = matrix_A;
+    static Eigen::MatrixXd serial_product_exact = matrix_A;
     for (int i(0); i < parallel_double_matrices.size(); ++i) {
       serial_product_exact *= matrix_A;
     }
@@ -234,52 +217,66 @@ int main(int argc, char **argv) {
                   "(5,7) = ", serial_product_exact(5, 7));
     }
 
-    // We now compare the embedding vectors. In practice this could be done
-    // more efficiently, but this implementation suffices for illustration.
-
     // We use the stable rank to compute the expected approximation bound
     // epsilon from the embedding size
     // :math:`\sqrt{2} \left ( (1 + 2\varepsilon)^{r - 1} \right )
     // \|A\|^r_{op}`.
-    const double srank                      = stable_rank(matrix_A);
-    const double epsilon_expected_streaming = std::sqrt(
+    static const double srank                      = stable_rank(matrix_A);
+    static const double epsilon_expected_streaming = std::sqrt(
         16 *
         (srank + std::log((transform_count - 1) *
                           single_transform_type::replication_count())) /
         single_transform_type::range_size());
 
-    double success_rate_streaming = 0.0;
-    double epsilon_streaming      = 0.0;
-    int    trials                 = 0;
+    // We now compare the pairwise distance between embedding vectors to their
+    // true distances. One would never do this in practice, but this
+    // implementation suffices for illustration.
 
-    for (int i(0); i < serial_product_exact.rows(); ++i) {
-      for (int j(i + 1); j < serial_product_exact.rows(); ++j) {
-        ++trials;
-        // compute exact distance between power iteration rows
-        double dist_exact =
-            (serial_product_exact.row(i) - serial_product_exact.row(j))
-                .lpNorm<2>();
-        // compute distance between streaming embedding rows
-        double dist_streaming = (parallel_product_streaming.row(i) -
-                                 parallel_product_streaming.row(j))
-                                    .lpNorm<2>();
-        double error_streaming = std::abs(1.0 - dist_streaming / dist_exact);
-        epsilon_streaming += error_streaming;
-        if (in_bounds(dist_exact, dist_streaming, epsilon_expected_streaming)) {
-          success_rate_streaming += 1.0;
-        }
-        if (verbose && i == 199 && j == 230) {
-          world.cout0("\t(", i, ",", j, ") exact ", dist_exact,
-                      ")\n\t\tstreaming (dist/error/success): (",
-                      dist_streaming, ", 1 +/- ", error_streaming, ", ",
-                      in_bounds(dist_exact, dist_streaming,
-                                epsilon_expected_streaming));
-        }
+    static double success_rate_streaming = 0.0;
+    static double epsilon_streaming      = 0.0;
+    static int    trials                 = 0;
+
+    parallel_product_streaming.for_all([&parallel_product_streaming](
+                                           const int              row_idx,
+                                           const Eigen::VectorXd &row_product) {
+      for (int col_idx(row_idx + 1); col_idx < serial_product_exact.rows();
+           ++col_idx) {
+        parallel_product_streaming.async_visit(
+            col_idx,
+            [](const int col_idx, const Eigen::VectorXd &col_product,
+               const int row_idx, const Eigen::VectorXd &row_product) {
+              ++trials;
+              // compute exact distance between power iteration rows
+              double dist_exact = (serial_product_exact.row(row_idx) -
+                                   serial_product_exact.row(col_idx))
+                                      .lpNorm<2>();
+              // compute distance between streaming embedding rows
+              double dist_streaming = (row_product - col_product).lpNorm<2>();
+              double error_streaming =
+                  std::abs(1.0 - dist_streaming / dist_exact);
+              epsilon_streaming += error_streaming;
+              if (in_bounds(dist_exact, dist_streaming,
+                            epsilon_expected_streaming)) {
+                success_rate_streaming += 1.0;
+              }
+              if (verbose && row_idx == 199 && col_idx == 230) {
+                std::cout << "\t(" << row_idx << "," << col_idx << ") exact "
+                          << dist_exact
+                          << ")\n\t\tstreaming (dist/error/success): ("
+                          << dist_streaming << ", 1 +/- " << error_streaming
+                          << ", "
+                          << in_bounds(dist_exact, dist_streaming,
+                                       epsilon_expected_streaming);
+              }
+            },
+            row_idx, row_product);
       }
-    }
+    });
+    world.barrier();
 
-    success_rate_streaming /= trials;
-    epsilon_streaming /= trials;
+    trials                 = ygm::sum(trials, world);
+    success_rate_streaming = ygm::sum(success_rate_streaming, world) / trials;
+    epsilon_streaming      = ygm::sum(epsilon_streaming, world) / trials;
 
     if (verbose) {
       world.cout0(
