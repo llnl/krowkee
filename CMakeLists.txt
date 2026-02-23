@@ -115,6 +115,7 @@ if (NOT Eigen3_POPULATED)
 endif ()
 
 if (KROWKEE_BUILD_TESTS)
+    option(TEST_WITH_SLURM "Run tests with Slurm" OFF)
     enable_testing()
     add_subdirectory(test)
 endif ()

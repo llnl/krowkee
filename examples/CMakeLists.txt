@@ -13,7 +13,6 @@ function (add_krowkee_example example_name)
         PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
                 $<INSTALL_INTERFACE:include>
     )
-    add_test(${example_exe} "${CMAKE_CURRENT_BINARY_DIR}/${example_exe}")
 endfunction ()
 
 add_krowkee_example(cli)
