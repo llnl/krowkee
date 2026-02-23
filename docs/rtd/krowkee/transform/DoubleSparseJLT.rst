@@ -4,3 +4,4 @@ DoubleSparseJLT
 ===========================
 
 .. doxygenclass:: krowkee::transform::DoubleSparseJLT
+  :members:

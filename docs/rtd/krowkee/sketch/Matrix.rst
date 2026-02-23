@@ -4,3 +4,4 @@ Matrix
 ===========================
 
 .. doxygenclass:: krowkee::sketch::Matrix
+  :members:
