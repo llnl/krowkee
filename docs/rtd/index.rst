@@ -1,9 +1,9 @@
-.. YGM documentation master file, created by
+.. krowkee documentation master file, created by
    sphinx-quickstart on Mon Apr  3 18:10:58 2023.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-YGM library documentation
+krowkee library documentation
 =====================================
 
 .. toctree::
