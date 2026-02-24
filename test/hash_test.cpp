@@ -1,4 +1,4 @@
-// Copyright 2021-2022 Lawrence Livermore National Security, LLC and other
+// Copyright 2021-2026 Lawrence Livermore National Security, LLC and other
 // krowkee Project Developers. See the top-level COPYRIGHT file for details.
 //
 // SPDX-License-Identifier: MIT
@@ -62,6 +62,57 @@ struct init_check {
                                            "good value initialization", i);
     }
     CHECK_CONDITION(true, "good value initialization");
+  }
+};
+
+template <std::size_t RangeSize>
+struct zero_check {
+  const char *name() const { return "zero check"; }
+
+  template <typename HashType, typename... ARGS>
+  void zero_handling(const Parameters params, const double std_dev_range,
+                     ARGS &&...args) const {
+    auto                       start      = Clock::now();
+    std::size_t                range_size = HashType::range_size();
+    std::vector<std::uint64_t> hist(range_size);
+    auto                       seed = params.seed;
+    for (std::uint64_t i(0); i < params.count; ++i) {
+      seed = krowkee::hash::wang64(seed);
+      HashType hash{seed, args...};
+      ++hist[hash(0)];
+    }
+
+    online_statistics os{};
+    os.push(hist);
+    double mean(os.mean()), var(os.variance()), std_dev(os.std_dev()),
+        target(std_dev_range * mean);
+    if (params.verbose == true) {
+      std::cout
+          << "Empirical histogram of zeros hashed to " << range_size
+          << " bins using " << params.count << " instances of "
+          << HashType::name() << " ("
+          << std::chrono::duration_cast<ns_type>(Clock::now() - start).count()
+          << " ns):";
+
+      for (int i(0); i < range_size; ++i) {
+        if (i % 20 == 0) {
+          std::cout << "\n\t";
+        }
+        std::cout << hist[i] << " ";
+      }
+      std::cout << std::endl;
+      std::cout << "\tmean: " << mean << ", variance: " << var
+                << ", std dev: " << std_dev
+                << ", max target std dev: " << target << std::endl;
+    }
+    std::stringstream ss;
+    ss << HashType::name() << " std dev";
+    CHECK_CONDITION(std_dev < target, ss.str());
+  }
+
+  void operator()(const Parameters &params) const {
+    zero_handling<mul_shift_type<RangeSize>>(params, 0.07);
+    zero_handling<mul_add_shift_type<RangeSize>>(params, 0.07);
   }
 };
 
@@ -146,6 +197,7 @@ struct do_experiment {
     print_line();
     std::cout << std::endl;
     do_test<init_check<RangeSize>>();
+    do_test<zero_check<RangeSize>>(params);
     do_test<empirical_histograms<RangeSize>>(params);
 #if __has_include(<cereal/cereal.hpp>)
     do_test<serialize_check<RangeSize>>(params);

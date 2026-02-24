@@ -4,3 +4,4 @@ FWHT
 ===========================
 
 .. doxygenclass:: krowkee::transform::FWHT
+  :members:

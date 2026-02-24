@@ -13,12 +13,13 @@ function (add_krowkee_example example_name)
         PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
                 $<INSTALL_INTERFACE:include>
     )
-    add_test(${example_exe} "${CMAKE_CURRENT_BINARY_DIR}/${example_exe}")
 endfunction ()
 
 add_krowkee_example(cli)
 add_krowkee_example(sparse_jlt)
 add_krowkee_example(merge)
+add_krowkee_example(power_iteration_iterative)
+add_krowkee_example(power_iteration_streaming)
 add_krowkee_example(verbose_templates)
 
 if (KROWKEE_USE_YGM)

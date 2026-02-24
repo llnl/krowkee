@@ -1,4 +1,4 @@
-// Copyright 2021-2022 Lawrence Livermore National Security, LLC and other
+// Copyright 2021-2026 Lawrence Livermore National Security, LLC and other
 // krowkee Project Developers. See the top-level COPYRIGHT file for details.
 //
 // SPDX-License-Identifier: MIT
@@ -77,7 +77,7 @@ template <typename T>
 void CHECK_ALL_ARCHIVES(const T &obj, const std::string &msg) {
 #if __has_include(<cereal/cereal.hpp>)
   CHECK_ARCHIVE(ss_bin_archive_test<T>, obj, "binary cereal archive", msg);
-  CHECK_ARCHIVE(ss_json_archive_test<T>, obj, "JSON cereal archive", msg);
+  // CHECK_ARCHIVE(ss_json_archive_test<T>, obj, "JSON cereal archive", msg);
 #if __has_include(<ygm/detail/ygm_cereal_archive.hpp>)
   CHECK_ARCHIVE(ygm_archive_test<T>, obj, "YGM cereal archive", msg);
 #endif

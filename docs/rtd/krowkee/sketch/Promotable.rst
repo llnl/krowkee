@@ -4,3 +4,4 @@ Promotable
 ===========================
 
 .. doxygenclass:: krowkee::sketch::Promotable
+  :members:

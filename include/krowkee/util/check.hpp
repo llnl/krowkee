@@ -1,4 +1,4 @@
-// Copyright 2021-2022 Lawrence Livermore National Security, LLC and other
+// Copyright 2021-2026 Lawrence Livermore National Security, LLC and other
 // krowkee Project Developers. See the top-level COPYRIGHT file for details.
 //
 // SPDX-License-Identifier: MIT
@@ -6,6 +6,10 @@
 #pragma once
 
 #include <krowkee/util/assert.hpp>
+
+#if __has_include(<ygm/comm.hpp>)
+#include <ygm/comm.hpp>
+#endif
 
 template <typename... Args>
 inline void CHECK_CONDITION(const bool success, const Args &...args) {
@@ -47,3 +51,14 @@ inline void CHECK_DOES_NOT_THROW(const FuncType &func, const std::string &msg,
     KROWKEE_ASSERT_RELEASE(false);
   }
 }
+
+#if __has_include(<ygm/comm.hpp>)
+template <typename... Args>
+inline void CHECK_CONDITION(ygm::comm &comm, const bool success,
+                            const Args &...args) {
+  std::stringstream ss;
+  (ss << ... << args);
+  comm.cout0(((success == true) ? "passed" : "failed"), " ", ss.str(), " test");
+  KROWKEE_ASSERT_RELEASE(success);
+}
+#endif

@@ -4,3 +4,4 @@ Sparse
 ===========================
 
 .. doxygenclass:: krowkee::sketch::Sparse
+  :members:

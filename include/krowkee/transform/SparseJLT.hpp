@@ -1,4 +1,4 @@
-// Copyright 2021-2022 Lawrence Livermore National Security, LLC and other
+// Copyright 2021-2026 Lawrence Livermore National Security, LLC and other
 // krowkee Project Developers. See the top-level COPYRIGHT file for details.
 //
 // SPDX-License-Identifier: MIT
@@ -45,8 +45,11 @@ template <typename RegType, template <std::size_t> class HashType,
           std::size_t RangeSize, std::size_t ReplicationCount>
 class SparseJLT {
  public:
-  using register_type = RegType;
-  using hash_type     = HashType<RangeSize>;
+  using register_type   = RegType;
+  using hash_type       = HashType<RangeSize>;
+  using indices_type    = std::vector<std::size_t>;
+  using polarities_type = std::vector<int>;
+  using update_type     = std::pair<indices_type, polarities_type>;
   using self_type =
       SparseJLT<register_type, HashType, RangeSize, ReplicationCount>;
 
@@ -123,6 +126,18 @@ class SparseJLT {
         registers.erase(index);
       }
     }
+  }
+
+  constexpr update_type apply(const std::uint64_t &idx) const {
+    update_type hashes = {indices_type(ReplicationCount),
+                          polarities_type(ReplicationCount)};
+    for (int i(0); i < ReplicationCount; ++i) {
+      auto [index, polarity] = _hashes[i](idx);
+      index += i * range_size();
+      hashes.first[i]  = index;
+      hashes.second[i] = polarity;
+    }
+    return hashes;
   }
 
  public:

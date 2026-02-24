@@ -1,4 +1,4 @@
-// Copyright 2021-2022 Lawrence Livermore National Security, LLC and other
+// Copyright 2021-2026 Lawrence Livermore National Security, LLC and other
 // krowkee Project Developers. See the top-level COPYRIGHT file for details.
 //
 // SPDX-License-Identifier: MIT
@@ -41,12 +41,13 @@ class Sparse {
   using merge_type    = MergeOp<register_type>;
   using registers_type =
       krowkee::container::compacting_map<KeyType, register_type, MapType>;
-  using vec_iter_type  = typename registers_type::vec_iter_type;
-  using vec_citer_type = typename registers_type::vec_citer_type;
-  using pair_type      = typename registers_type::pair_type;
-  using map_type       = typename registers_type::map_type;
-  using self_type      = Sparse<register_type, MergeOp, MapType, KeyType, Size,
-                                CompactionThreshold>;
+  using dense_registers_type = std::vector<register_type>;
+  using vec_iter_type        = typename registers_type::vec_iter_type;
+  using vec_citer_type       = typename registers_type::vec_citer_type;
+  using pair_type            = typename registers_type::pair_type;
+  using map_type             = typename registers_type::map_type;
+  using self_type = Sparse<register_type, MergeOp, MapType, KeyType, Size,
+                           CompactionThreshold>;
 
  protected:
   registers_type _registers;
@@ -309,16 +310,38 @@ class Sparse {
    * unset indices.
    * @throws std::logic_error if the object is not compact.
    */
-  std::vector<register_type> register_vector() const {
+  dense_registers_type registers() const {
     if (is_compact() == false) {
       throw std::logic_error("Bad attempt to export uncompacted map!");
     }
-    std::vector<register_type> ret(Size);
+    std::vector<register_type> registers(Size);
     std::for_each(std::cbegin(_registers), std::cend(_registers),
-                  [&ret](const std::pair<KeyType, register_type> &elem) {
-                    ret[elem.first] = elem.second;
+                  [&registers](const std::pair<KeyType, register_type> &elem) {
+                    registers[elem.first] = elem.second;
                   });
-    return ret;
+    return registers;
+  }
+
+  /**
+   * @brief Get a copy of the raw (sparse) register vector with a scaling
+   * factor.
+   *
+   * @param scaling_factor the scalar scaling factor.
+   * @return std::vector<register_type> The register vector, with zeros for
+   * unset indices.
+   * @throws std::logic_error if the object is not compact.
+   */
+  dense_registers_type scaled_registers(const double scaling_factor) const {
+    if (is_compact() == false) {
+      throw std::logic_error("Bad attempt to export uncompacted map!");
+    }
+    std::vector<register_type> scaled_registers(Size);
+    std::for_each(std::cbegin(_registers), std::cend(_registers),
+                  [&scaled_registers, &scaling_factor](
+                      const std::pair<KeyType, register_type> &elem) {
+                    scaled_registers[elem.first] = elem.second / scaling_factor;
+                  });
+    return scaled_registers;
   }
 
   //////////////////////////////////////////////////////////////////////////////

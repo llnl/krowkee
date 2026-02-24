@@ -1,4 +1,4 @@
-// Copyright 2021-2022 Lawrence Livermore National Security, LLC and other
+// Copyright 2021-2026 Lawrence Livermore National Security, LLC and other
 // krowkee Project Developers. See the top-level COPYRIGHT file for details.
 //
 // SPDX-License-Identifier: MIT
@@ -7,6 +7,7 @@
 
 #include <krowkee/hash/hash.hpp>
 #include <krowkee/transform/Element.hpp>
+#include <krowkee/transform/SparseJLT.hpp>
 
 #include <sstream>
 #include <vector>
@@ -35,22 +36,34 @@ using krowkee::stream::Element;
  * @tparam RegType The type of register over which the functor operates
  * @tparam HashType The hash functor type to use to define CountSketch random
  * mappings.
+ * @tparam PtrType The type of shared pointer used to wrap individual sketch
+ * functors.
  * @tparam RangeSize The power-of-two embedding dimension.
  * @tparam ReplicationCount The number of replicated CountSketch transforms to
  * use.
  */
 template <typename RegType, template <std::size_t> class HashType,
-          std::size_t RangeSize, std::size_t ReplicationCount>
+          template <typename> class PtrType, std::size_t RangeSize,
+          std::size_t ReplicationCount>
 class DoubleSparseJLT {
  public:
   using register_type = RegType;
   using hash_type     = HashType<RangeSize>;
-  using self_type =
-      DoubleSparseJLT<register_type, HashType, RangeSize, ReplicationCount>;
+  using row_transform_type =
+      SparseJLT<RegType, HashType, RangeSize, ReplicationCount>;
+  using row_transform_ptr_type = PtrType<row_transform_type>;
+  using col_transform_type =
+      SparseJLT<RegType, HashType, RangeSize, ReplicationCount>;
+  using col_transform_ptr_type = PtrType<col_transform_type>;
+  using self_type = DoubleSparseJLT<register_type, HashType, PtrType, RangeSize,
+                                    ReplicationCount>;
+  using indices_type    = typename row_transform_type::indices_type;
+  using polarities_type = typename row_transform_type::polarities_type;
+  using update_type     = typename row_transform_type::update_type;
 
  private:
-  std::vector<hash_type> _row_hashes;
-  std::vector<hash_type> _col_hashes;
+  row_transform_ptr_type _row_transform_ptr;
+  col_transform_ptr_type _col_transform_ptr;
 
  public:
   /**
@@ -72,21 +85,13 @@ class DoubleSparseJLT {
    * @note This behavior may change in the future.
    *
    * @tparam Args type(s) of additional hash parameters
-   * @param seed The random seed.
-   * @param args Any additional parameters required by the hash functions.
+   * @param row_transform_ptr shared pointer to the row transform.
+   * @param col_transform_ptr shared pointer to the column transform.
    */
-  template <typename... Args>
-  DoubleSparseJLT(std::uint64_t row_seed, std::uint64_t col_seed,
-                  const Args &...args) {
-    _row_hashes.reserve(ReplicationCount);
-    _col_hashes.reserve(ReplicationCount);
-    for (int i(0); i < ReplicationCount; ++i) {
-      _row_hashes.emplace_back(row_seed, args...);
-      row_seed = krowkee::hash::wang64(row_seed);
-      _col_hashes.emplace_back(col_seed, args...);
-      col_seed = krowkee::hash::wang64(col_seed);
-    }
-  }
+  DoubleSparseJLT(row_transform_ptr_type row_transform_ptr,
+                  col_transform_ptr_type col_transform_ptr)
+      : _row_transform_ptr(row_transform_ptr),
+        _col_transform_ptr(col_transform_ptr) {}
 
   DoubleSparseJLT() {}
 
@@ -103,8 +108,8 @@ class DoubleSparseJLT {
    */
   template <class Archive>
   void serialize(Archive &archive) {
-    archive(_row_hashes);
-    archive(_col_hashes);
+    archive(_row_transform_ptr);
+    archive(_col_transform_ptr);
   }
 #endif
 
@@ -127,27 +132,15 @@ class DoubleSparseJLT {
                                typename ContainerType::register_type>::value);
     using merge_type = typename ContainerType::merge_type;
     const Element<register_type> stream_element(item_args...);
-    std::vector<std::size_t>     row_indices(ReplicationCount);
-    std::vector<std::size_t>     col_indices(ReplicationCount);
-    std::vector<int>             row_polarities(ReplicationCount);
-    std::vector<int>             col_polarities(ReplicationCount);
-    for (int i(0); i < ReplicationCount; ++i) {
-      auto [row_index, row_polarity] = _row_hashes[i](stream_element.item);
-      auto [col_index, col_polarity] =
-          _col_hashes[i](stream_element.identifier);
-      row_index += i * range_size();
-      col_index += i * range_size();
-      row_indices[i]    = row_index;
-      col_indices[i]    = col_index;
-      row_polarities[i] = row_polarity;
-      col_polarities[i] = col_polarity;
-    }
+    update_type row_hashes = _row_transform_ptr->apply(stream_element.item);
+    update_type col_hashes =
+        _col_transform_ptr->apply(stream_element.identifier);
     for (int i(0); i < ReplicationCount; ++i) {
       for (int j(0); j < ReplicationCount; ++j) {
         const std::pair<std::uint64_t, std::uint64_t> indices = {
-            row_indices[i], col_indices[j]};
+            row_hashes.first[i], col_hashes.first[j]};
         register_type &reg      = registers[indices];
-        auto           polarity = row_polarities[i] * col_polarities[j];
+        auto           polarity = row_hashes.second[i] * col_hashes.second[j];
         reg = merge_type()(reg, polarity * stream_element.multiplicity);
         if (reg == 0) {
           registers.erase(indices);
@@ -184,7 +177,7 @@ class DoubleSparseJLT {
    * @return constexpr std::size_t The replication count.
    */
   static constexpr RegType scaling_factor =
-      std::sqrt((RegType)replication_count());
+      row_transform_type::scaling_factor * col_transform_type::scaling_factor;
 
   /**
    * @brief Get the total number of addressable registers across all hash
@@ -199,7 +192,7 @@ class DoubleSparseJLT {
   }
 
   /** Get the random seed. */
-  constexpr std::uint64_t seed() const { return _row_hashes[0].seed(); }
+  constexpr std::uint64_t seed() const { return _row_transform_ptr->seed(); }
 
   /**
    * @brief Return a description of the transform type.
@@ -226,16 +219,9 @@ class DoubleSparseJLT {
     return ss.str();
   }
 
-  constexpr bool same_hashes(const self_type &rhs) const {
-    for (int i(0); i < ReplicationCount; ++i) {
-      if (_row_hashes[i] != rhs._row_hashes[i]) {
-        return false;
-      }
-      if (_col_hashes[i] != rhs._col_hashes[i]) {
-        return false;
-      }
-    }
-    return true;
+  constexpr bool same_transforms(const self_type &rhs) const {
+    return *_row_transform_ptr == *(rhs._row_transform_ptr) &&
+           *_col_transform_ptr == *(rhs._col_transform_ptr);
   }
 
   /**
@@ -247,7 +233,7 @@ class DoubleSparseJLT {
    * @return false The seeds or range sizes disagree.
    */
   friend constexpr bool operator==(const self_type &lhs, const self_type &rhs) {
-    return lhs.same_hashes(rhs);
+    return lhs.same_transforms(rhs);
   }
 
   /**

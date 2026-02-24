@@ -1,4 +1,4 @@
-// Copyright 2021-2022 Lawrence Livermore National Security, LLC and other
+// Copyright 2021-2026 Lawrence Livermore National Security, LLC and other
 // krowkee Project Developers. See the top-level COPYRIGHT file for details.
 //
 // SPDX-License-Identifier: MIT
@@ -45,7 +45,7 @@ template <typename RegType, std::size_t RangeSize, std::size_t ReplicationCount,
           template <typename> class PtrType = std::shared_ptr>
 using DoubleSparseJLT = krowkee::sketch::Sketch<
     krowkee::transform::DoubleSparseJLT<RegType, krowkee::hash::CountSketchHash,
-                                        RangeSize, ReplicationCount>,
+                                        PtrType, RangeSize, ReplicationCount>,
     krowkee::sketch::Matrix<RegType, std::plus, RangeSize * ReplicationCount,
                             RangeSize * ReplicationCount>,
     PtrType>;

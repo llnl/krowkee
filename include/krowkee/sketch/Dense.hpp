@@ -1,4 +1,4 @@
-// Copyright 2021-2022 Lawrence Livermore National Security, LLC and other
+// Copyright 2021-2026 Lawrence Livermore National Security, LLC and other
 // krowkee Project Developers. See the top-level COPYRIGHT file for details.
 //
 // SPDX-License-Identifier: MIT
@@ -35,10 +35,11 @@ namespace sketch {
 template <typename RegType, template <typename> class MergeOp, std::size_t Size>
 class Dense {
  public:
-  using register_type  = RegType;
-  using registers_type = std::vector<register_type>;
-  using merge_type     = MergeOp<register_type>;
-  using self_type      = Dense<register_type, MergeOp, Size>;
+  using register_type        = RegType;
+  using registers_type       = std::vector<register_type>;
+  using dense_registers_type = registers_type;
+  using merge_type           = MergeOp<register_type>;
+  using self_type            = Dense<register_type, MergeOp, Size>;
 
  protected:
   registers_type _registers;
@@ -252,18 +253,25 @@ class Dense {
   constexpr std::size_t compaction_threshold() const { return 0; }
 
   /**
-   * @brief Get a copy of the raw registers vector.
+   * @brief Get a reference to the raw registers vector.
    *
    * @return const registers_type The register vector.
    */
-  const registers_type get_registers() const { return _registers; }
+  const registers_type &registers() const { return _registers; }
 
   /**
-   * @brief Get a copy of the raw registers vector.
+   * @brief Get a copy of the raw scaled registers vector.
    *
-   * @return const registers_type The register vector.
+   * @param scaling_factor the scalar scaling factor.
+   * @return const registers_type The scaled register vector.
    */
-  registers_type register_vector() const { return _registers; }
+  dense_registers_type scaled_registers(const double scaling_factor) const {
+    dense_registers_type scaled_registers{_registers};
+    for (int i(0); i < scaled_registers.size(); ++i) {
+      scaled_registers[i] /= scaling_factor;
+    }
+    return scaled_registers;
+  }
 
   //////////////////////////////////////////////////////////////////////////////
   // Equality operators
