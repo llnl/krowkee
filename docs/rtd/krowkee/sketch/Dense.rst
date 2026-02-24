@@ -4,3 +4,4 @@ Dense
 ===========================
 
 .. doxygenclass:: krowkee::sketch::Dense
+  :members:

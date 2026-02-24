@@ -1,4 +1,4 @@
-// Copyright 2021-2022 Lawrence Livermore National Security, LLC and other
+// Copyright 2021-2026 Lawrence Livermore National Security, LLC and other
 // krowkee Project Developers. See the top-level COPYRIGHT file for details.
 //
 // SPDX-License-Identifier: MIT
@@ -90,6 +90,11 @@ void merge_and_compact(LhsIt lhs_itr, const LhsIt lhs_end, RhsIt rhs_itr,
  * https://developer.apple.com/documentation/swift/sequence/2950916-compactmap
  * [2] https://github.com/greg7mdp/sparsepp
  * [4] https://gist.github.com/jeetsukumaran/307264
+ *
+ * @tparam KeyType Hashable type of the index elements of the map.
+ * @tparam ValueType Value type of the map.
+ * @tparam MapType Underlying map implementation. Defaults to std::map but
+ * boost::container::flat_map is better for performance.
  */
 template <typename KeyType, typename ValueType,
           template <typename, typename> class MapType = std::map>

@@ -21,3 +21,8 @@ add_seq_krowkee_test(countsketch_hash_test)
 add_seq_krowkee_test(test_fwht_utils)
 add_seq_krowkee_test(compacting_map_test)
 add_seq_krowkee_test(linearsketch_test)
+add_seq_krowkee_test(two_sided_test)
+
+if (KROWKEE_USE_YGM)
+    add_subdirectory(ygm)
+endif ()

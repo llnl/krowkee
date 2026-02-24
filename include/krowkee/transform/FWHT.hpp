@@ -1,4 +1,4 @@
-// Copyright 2021-2022 Lawrence Livermore National Security, LLC and other
+// Copyright 2021-2026 Lawrence Livermore National Security, LLC and other
 // krowkee Project Developers. See the top-level COPYRIGHT file for details.
 //
 // SPDX-License-Identifier: MIT
@@ -120,14 +120,14 @@ class FWHT {
 
   constexpr std::uint64_t domain_size() const { return _domain_size; }
 
-  static constexpr std::string name() { return "FWHT"; }
-
-  static constexpr std::string full_name() {
+  static constexpr std::string name() {
     std::stringstream ss;
-    ss << name() << " using " << RangeSize << " " << sizeof(RegType)
-       << "-byte registers";
+    ss << "FWHT<" << RangeSize << ", " << ReplicationCount << ", "
+       << sizeof(RegType) << ">";
     return ss.str();
   }
+
+  static constexpr std::string full_name() { return name(); }
 
   friend constexpr bool operator==(const self_type &lhs, const self_type &rhs) {
     return lhs.seed() == rhs.seed() && lhs.range_size() == rhs.range_size();

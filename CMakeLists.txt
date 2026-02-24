@@ -12,7 +12,7 @@ endif ()
 # ---------------------------------------------------------------------------- #
 project(
     krowkee
-    VERSION 0.2
+    VERSION 0.3
     DESCRIPTION "HPC multi-stream sketching library"
     LANGUAGES CXX
 )
@@ -37,8 +37,14 @@ set(YGM_FETCH_GIT
     "https://github.com/LLNL/ygm.git"
     CACHE STRING "GIT to fetch ygm")
 set(YGM_FETCH_TAG
-    "v0.9-dev"
+    "v0.10-dev"
     CACHE STRING "Tag to fetch ygm")
+set(EIGEN3_FETCH_GIT
+    "https://github.com/PX4/eigen.git"
+    CACHE STRING "GIT to fetch Eigen3")
+set(EIGEN3_FETCH_TAG
+    "3.4"
+    CACHE STRING "Tag to fetch Eigen3")
 
 #
 # Doxygen and Read the Docs (RTD) Documentation
@@ -90,7 +96,26 @@ if (KROWKEE_USE_YGM)
     target_link_libraries(krowkee INTERFACE ygm::ygm)
 endif ()
 
+#
+# Find-else-fetch Eigen for linear algebra
+#
+if (NOT Eigen3_POPULATED)
+    find_package(Eigen3 CONFIG QUIET)
+    if (NOT Eigen3_FOUND)
+        # Turn off build tests for Eigen3
+        option(BUILD_TESTING OFF)
+        FetchContent_Declare(
+            Eigen3
+            GIT_REPOSITORY ${EIGEN3_FETCH_GIT}
+            GIT_TAG ${EIGEN3_FETCH_TAG}
+        )
+        FetchContent_MakeAvailable(Eigen3)
+    endif()
+    target_link_libraries(krowkee INTERFACE Eigen3::Eigen)
+endif ()
+
 if (KROWKEE_BUILD_TESTS)
+    option(TEST_WITH_SLURM "Run tests with Slurm" OFF)
     enable_testing()
     add_subdirectory(test)
 endif ()

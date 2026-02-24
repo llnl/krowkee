@@ -17,8 +17,7 @@ struct HistSketch {
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
   HistSketch(const transform_ptr_type &transform_ptr, const Parameters &params)
-      : _sketch(transform_ptr, params.compaction_threshold,
-                params.promotion_threshold) {}
+      : _sketch(transform_ptr) {}
 
   void insert(const ValueType &idx) { _sketch.insert(idx); }
 
@@ -37,9 +36,7 @@ struct VectorGraphSketch {
                     const Parameters         &params)
       : _sketch_vec() {
     for (int i(0); i < params.domain_size; ++i) {
-      _sketch_vec.push_back(std::make_unique<sketch_type>(
-          transform_ptr, params.compaction_threshold,
-          params.promotion_threshold));
+      _sketch_vec.push_back(std::make_unique<sketch_type>(transform_ptr));
     }
   }
 
@@ -65,19 +62,14 @@ struct MapGraphSketch {
 
   MapGraphSketch(const transform_ptr_type &transform_ptr,
                  const Parameters         &params)
-      : _sketch_map(),
-        _transform_ptr(transform_ptr),
-        _compaction_threshold(params.compaction_threshold),
-        _promotion_threshold(params.promotion_threshold) {}
+      : _sketch_map(), _transform_ptr(transform_ptr) {}
 
   void insert(const edge_type<ValueType> &edge) {
     auto [src, dst] = edge;
     auto range      = _sketch_map.equal_range(src);
     if (range.first == range.second) {
-      _sketch_map.insert(std::make_pair(
-          src,
-          std::make_unique<sketch_type>(_transform_ptr, _compaction_threshold,
-                                        _promotion_threshold)));
+      _sketch_map.insert(
+          std::make_pair(src, std::make_unique<sketch_type>(_transform_ptr)));
     }
     _sketch_map[src]->insert(dst);
   }
@@ -91,23 +83,24 @@ struct MapGraphSketch {
  private:
   std::map<ValueType, std::unique_ptr<sketch_type>> _sketch_map;
   transform_ptr_type                                _transform_ptr;
-  std::uint64_t                                     _compaction_threshold;
-  std::uint64_t                                     _promotion_threshold;
 };
 
 // histogram sketch types
 
 const static std::size_t RANGE_SIZE(32);
 const static std::size_t REPLICATION_COUNT(1);
+const static std::size_t COMPACTION_THRESHOLD(8);
+const static std::size_t PROMOTION_THRESHOLD(32);
 
 using dense_type =
     krowkee::sketch::SparseJLT<std::int32_t, RANGE_SIZE, REPLICATION_COUNT>;
 using sparse_map_type =
     krowkee::sketch::sparse::SparseJLT<std::int32_t, RANGE_SIZE,
-                                       REPLICATION_COUNT, std::map>;
-using promotable_map_type =
-    krowkee::sketch::promotable::SparseJLT<std::int32_t, RANGE_SIZE,
-                                           REPLICATION_COUNT, std::map>;
+                                       REPLICATION_COUNT, COMPACTION_THRESHOLD,
+                                       std::map>;
+using promotable_map_type = krowkee::sketch::promotable::SparseJLT<
+    std::int32_t, RANGE_SIZE, REPLICATION_COUNT, COMPACTION_THRESHOLD,
+    PROMOTION_THRESHOLD, std::map>;
 
 template <typename ValueType>
 using dense32_cs_hist = HistSketch<dense_type, ValueType>;
@@ -139,10 +132,13 @@ using map_promotable32_cs_map_graph =
 
 #if __has_include(<boost/container/flat_map.hpp>)
 
-using sparse_flatmap_type = krowkee::sketch::sparse::SparseJLT<
-    std::int32_t, RANGE_SIZE, REPLICATION_COUNT, boost::container::flat_map>;
+using sparse_flatmap_type =
+    krowkee::sketch::sparse::SparseJLT<std::int32_t, RANGE_SIZE,
+                                       REPLICATION_COUNT, COMPACTION_THRESHOLD,
+                                       boost::container::flat_map>;
 using promotable_flatmap_type = krowkee::sketch::promotable::SparseJLT<
-    std::int32_t, RANGE_SIZE, REPLICATION_COUNT, boost::container::flat_map>;
+    std::int32_t, RANGE_SIZE, REPLICATION_COUNT, COMPACTION_THRESHOLD,
+    PROMOTION_THRESHOLD, boost::container::flat_map>;
 
 template <typename ValueType>
 using flatmap_sparse32_cs_hist = HistSketch<sparse_flatmap_type, ValueType>;

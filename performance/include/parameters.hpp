@@ -24,8 +24,6 @@ struct Parameters {
   std::uint64_t    range_size;
   std::uint64_t    domain_size;
   std::uint64_t    observation_count;
-  std::size_t      compaction_threshold;
-  std::size_t      promotion_threshold;
   std::size_t      iterations;
   std::uint64_t    seed;
   sketch_impl_type sketch_impl;
@@ -39,8 +37,6 @@ std::ostream &operator<<(std::ostream &os, const Parameters &params) {
   os << "\n\trange_size: " << params.range_size;
   os << "\n\tdomain_size: " << params.domain_size;
   os << "\n\tobservation_count: " << params.observation_count;
-  os << "\n\tcompaction_threshold: " << params.compaction_threshold;
-  os << "\n\tpromotion_threshold: " << params.promotion_threshold;
   os << "\n\titerations: " << params.iterations;
   os << "\n\tseed: " << params.seed;
   os << "\n\tverbose: " << params.verbose;
@@ -53,8 +49,6 @@ void print_help(char *exe_name) {
             << "\t-r, --range <int>              - range of sketch transform\n"
             << "\t-d, --domain <int>             - domain of sketch transform\n"
             << "\t-b, --observation_count <int>  - number of sketches to test\n"
-            << "\t-o, --compaction-thresh <int>  - compaction threshold\n"
-            << "\t-p, --promotion-thresh <int>   - promotion threshold\n"
             << "\t-i, --iterations <int>         - number of iterations\n"
             << "\t-t, --sketch-type <str>        - sketch type "
                "(cst, sparse_cst, promotable_cst, fwht)\n"
@@ -77,24 +71,14 @@ Parameters parse_args(int argc, char **argv) {
   std::uint64_t    domain_size(4096);
   std::uint64_t    observation_count(16);
   std::uint64_t    seed(krowkee::hash::default_seed);
-  std::size_t      compaction_threshold(8);
-  std::size_t      promotion_threshold(32);
   std::size_t      iterations(10);
   sketch_impl_type sketch_impl(sketch_impl_type::cst);
   cmap_impl_type   cmap_impl(cmap_impl_type::std);
   bool             verbose(false);
   bool             do_all(argc == 1);
 
-  Parameters params{count,
-                    range_size,
-                    domain_size,
-                    observation_count,
-                    compaction_threshold,
-                    promotion_threshold,
-                    iterations,
-                    seed,
-                    sketch_impl,
-                    cmap_impl,
+  Parameters params{count,      range_size, domain_size, observation_count,
+                    iterations, seed,       sketch_impl, cmap_impl,
                     verbose};
 
   int c;
@@ -106,8 +90,6 @@ Parameters parse_args(int argc, char **argv) {
         {"range", required_argument, NULL, 'r'},
         {"domain", required_argument, NULL, 'd'},
         {"observation-count", required_argument, NULL, 'b'},
-        {"compaction-thresh", required_argument, NULL, 'o'},
-        {"promotion-thresh", required_argument, NULL, 'p'},
         {"iterations", required_argument, NULL, 'i'},
         {"sketch-type", required_argument, NULL, 't'},
         {"map-type", required_argument, NULL, 'm'},
@@ -117,8 +99,8 @@ Parameters parse_args(int argc, char **argv) {
         {NULL, 0, NULL, 0}};
 
     int curind = optind;
-    c = getopt_long(argc, argv, "-:c:r:d:b:o:p:i:t:m:s:vh", long_options,
-                    &option_index);
+    c          = getopt_long(argc, argv, "-:c:r:d:b:i:t:m:s:vh", long_options,
+                             &option_index);
     if (c == -1) {
       break;
     }
@@ -149,12 +131,6 @@ Parameters parse_args(int argc, char **argv) {
         break;
       case 'b':
         params.observation_count = std::atoll(optarg);
-        break;
-      case 'o':
-        params.compaction_threshold = std::atoll(optarg);
-        break;
-      case 'p':
-        params.promotion_threshold = std::atoll(optarg);
         break;
       case 'i':
         params.iterations = std::atoll(optarg);

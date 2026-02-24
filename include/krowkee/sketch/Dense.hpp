@@ -1,4 +1,4 @@
-// Copyright 2021-2022 Lawrence Livermore National Security, LLC and other
+// Copyright 2021-2026 Lawrence Livermore National Security, LLC and other
 // krowkee Project Developers. See the top-level COPYRIGHT file for details.
 //
 // SPDX-License-Identifier: MIT
@@ -29,14 +29,17 @@ namespace sketch {
  *
  * @tparam RegType The type held by each register.
  * @tparam MergeOp An template merge operator to combine two sketches.
+ * @tparam Size The maximum number of registers. Must equal the embedding
+ * dimension of the transform to be used.
  */
-template <typename RegType, template <typename> class MergeOp>
+template <typename RegType, template <typename> class MergeOp, std::size_t Size>
 class Dense {
  public:
-  using register_type  = RegType;
-  using registers_type = std::vector<register_type>;
-  using merge_type     = MergeOp<register_type>;
-  using self_type      = Dense<register_type, MergeOp>;
+  using register_type        = RegType;
+  using registers_type       = std::vector<register_type>;
+  using dense_registers_type = registers_type;
+  using merge_type           = MergeOp<register_type>;
+  using self_type            = Dense<register_type, MergeOp, Size>;
 
  protected:
   registers_type _registers;
@@ -44,14 +47,8 @@ class Dense {
  public:
   /**
    * @brief Construct a new Dense container object
-   *
-   * @tparam Args Other args (ignored)
-   * @param size The number of registers, equal to the range size of the sketch
-   * functor times its replication count.
-   * @param args Ignored by Dense.
    */
-  template <typename... Args>
-  Dense(const std::size_t size, const Args &...args) : _registers(size) {}
+  Dense() : _registers(Size) {}
 
   /**
    * @brief Copy constructor.
@@ -59,16 +56,6 @@ class Dense {
    * @param rhs The base Dense container to copy.
    */
   Dense(const self_type &rhs) : _registers(rhs._registers) {}
-
-  /**
-   * @brief Default constructor for Dense
-   *
-   * @note Only used for move constructor.
-   */
-  Dense() {}
-
-  // // move constructor
-  // Dense(self_type &&rhs) : self_type() { std::swap(*this, rhs); }
 
   //////////////////////////////////////////////////////////////////////////////
   // Swaps
@@ -144,12 +131,6 @@ class Dense {
    * @throws std::invalid_argument if the register sizes do not match.
    */
   constexpr void merge(const self_type &rhs) {
-    if (size() != rhs.size()) {
-      std::stringstream ss;
-      ss << "error: attempting to merge embedding 1 of dimension " << size()
-         << " with embedding 2 of dimension " << rhs.size();
-      throw std::invalid_argument(ss.str());
-    }
     std::transform(std::begin(_registers), std::end(_registers),
                    std::begin(rhs._registers), std::begin(_registers),
                    merge_type());
@@ -241,7 +222,11 @@ class Dense {
    *
    * @return std::string "Dense"
    */
-  static constexpr std::string name() { return "Dense"; }
+  static constexpr std::string name() {
+    std::stringstream ss;
+    ss << "Dense<" << Size << ">";
+    return ss.str();
+  }
 
   /**
    * @brief Returns a description of the fully-qualified type of container.
@@ -254,29 +239,39 @@ class Dense {
   constexpr bool is_sparse() const { return false; }
 
   /** The size of the registers vector. */
-  constexpr std::size_t size() const { return _registers.size(); }
+  static constexpr std::size_t size() { return Size; }
 
   /** The size of the registers vector. */
-  constexpr std::size_t max_size() const { return _registers.size(); }
+  static constexpr std::size_t max_size() { return Size; }
+
+  /** The size of the embedding. Equal to max_size() */
+  static constexpr std::size_t embedding_size() { return Size; }
 
   /** The number of bytes used by each register. */
-  constexpr std::size_t reg_size() const { return sizeof(register_type); }
+  static constexpr std::size_t reg_size() { return sizeof(register_type); }
 
   constexpr std::size_t compaction_threshold() const { return 0; }
 
   /**
-   * @brief Get a copy of the raw registers vector.
+   * @brief Get a reference to the raw registers vector.
    *
    * @return const registers_type The register vector.
    */
-  const registers_type get_registers() const { return _registers; }
+  const registers_type &registers() const { return _registers; }
 
   /**
-   * @brief Get a copy of the raw registers vector.
+   * @brief Get a copy of the raw scaled registers vector.
    *
-   * @return const registers_type The register vector.
+   * @param scaling_factor the scalar scaling factor.
+   * @return const registers_type The scaled register vector.
    */
-  registers_type register_vector() const { return _registers; }
+  dense_registers_type scaled_registers(const double scaling_factor) const {
+    dense_registers_type scaled_registers{_registers};
+    for (int i(0); i < scaled_registers.size(); ++i) {
+      scaled_registers[i] /= scaling_factor;
+    }
+    return scaled_registers;
+  }
 
   //////////////////////////////////////////////////////////////////////////////
   // Equality operators

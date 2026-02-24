@@ -1,4 +1,4 @@
-// Copyright 2021-2022 Lawrence Livermore National Security, LLC and other
+// Copyright 2021-2026 Lawrence Livermore National Security, LLC and other
 // krowkee Project Developers. See the top-level COPYRIGHT file for details.
 //
 // SPDX-License-Identifier: MIT
@@ -66,13 +66,16 @@ struct CountSketchHash {
   /**
    * Print functor name.
    */
-  static constexpr std::string name() { return "CountSketchHash"; }
+  static constexpr std::string name() {
+    std::stringstream ss;
+    ss << "CountSketchHash";
+    return ss.str();
+  }
 
   static constexpr std::string full_name() {
     std::stringstream ss;
-    ss << self_type::name() << " with register hash ["
-       << register_hash_type::full_name() << "] and polarity hash ["
-       << polarity_hash_type::full_name() << "]";
+    ss << "CountSketchHash<" << register_hash_type::full_name() << ", "
+       << polarity_hash_type::full_name() << ">";
     return ss.str();
   }
 

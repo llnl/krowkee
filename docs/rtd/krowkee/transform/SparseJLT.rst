@@ -4,3 +4,4 @@ SparseJLT
 ===========================
 
 .. doxygenclass:: krowkee::transform::SparseJLT
+  :members:

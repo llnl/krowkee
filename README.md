@@ -29,23 +29,28 @@ such as the
 ## Reqirements
 * C++17 - GCC versions 10-11 are tested. 
 Your mileage may vary with other compilers.
+* [Eigen](https://github.com/PX4/eigen) v3.4 or greater. If package `Eigen3` is
+  not installed, `krowkee` will attempt to clone and install via
+  [FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html).
 * Optional dependencies:
-    - [YGM](https://github.com/LLNL/ygm) 0.7 or greater for distributed memory
+    - [YGM](https://github.com/LLNL/ygm) 0.10 or greater for distributed memory
       communication.
       Toggle with CMake option `KROWKEE_USE_YGM`. 
       Default `OFF`.
       YGM is not used within the library, but is used in some tests and examples
       that are only compiled if `KROWKEE_USE_YGM` is `ON`.
-      If package `ygm` is not installed, `krowkee` will attempt to clone and
-      install via 
+      `KROWKEE_USE_YGM` is NOT required if your downstream project uses both
+      `krowkee` and `ygm`.
+      If toggled on and package `ygm` is not installed, `krowkee` will attempt
+      to clone and install via 
       [FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html). Includes additional dependencies:
         * [Cereal](https://github.com/USCiLab/cereal) - C++ serialization 
           library. 
           If package `cereal` is not installed, `krowkee` will attempt
           [FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html).
         * MPI         
-    - [Boost](https://www.boost.org/) 1.48 or greater for 
-      `boost::container::flatmap`. 
+    - [Boost](https://www.boost.org/) 1.75 or greater for 
+      `boost::container::flatmap`.
       Toggle with CMake option `KROWKEE_USE_BOOST`.
       Default `ON`.
 
@@ -57,7 +62,7 @@ Add the following to your `CMakeLists.txt` to "find-else-fetch" `krowkee`,
 cloning it and its dependencies and preparing their headers for installation as
 a part of your project.
 ```
-set(DESIRED_KROWKEE_VERSION 0.1)
+set(DESIRED_KROWKEE_VERSION 0.3)
 find_package(krowkee ${DESIRED_KROWKEE_VERSION} CONFIG)
 if (NOT krowkee_FOUND)
     FetchContent_Declare(
@@ -65,35 +70,18 @@ if (NOT krowkee_FOUND)
         GIT_REPOSITORY https://github.com/LLNL/krowkee
         GIT_TAG v${DESIRED_KROWKEE_VERSION}
     )
-    FetchContent_GetProperties(krowkee)
-    if (krowkee_POPULATED)
-        message(STATUS "Found already populated krowkee dependency: "
-                       ${krowkee_SOURCE_DIR}
-        )
-    else ()
-        set(JUST_INSTALL_KROWKEE ON)
-        set(KROWKEE_INSTALL ON)
-        set(KROWKEE_USE_YGM ON)  # or OFF if local-only
-        FetchContent_Populate(krowkee)
-        add_subdirectory(${krowkee_SOURCE_DIR} ${krowkee_BINARY_DIR})
-        message(STATUS "Cloned krowkee dependency " ${krowkee_SOURCE_DIR})
-    endif ()
-else ()
-    message(STATUS "Found installed krowkee dependency " ${krowkee_DIR})
+    FetchContent_MakeAvailable(krowkee)
 endif ()
 ```
 
 
 ## Building
 These instructions assume that you have a relatively modern C++ compiler 
-(C++17 required, only tested using GCC).
+(C++20 required, only tested using GCC).
 If included, `krowkee`'s CMake build makes use of find-else-fetch semantics for 
-its optional `ygm` and `cereal` dependencies.
+`Eigen` and its optional `ygm` and `cereal` dependencies.
 `krowkee` will try to find local installations of the libraries, and will clone
 and link the repositories internally if none are found.
-
-One can build a local-only version of `krowkee` by passing 
- to `cmake .. -DKROWKEE_USE_YGM=OFF`.
 
 `spack` is a convenient means to include `cereal` and manage compilers, but 
 is not required to build `krowkee`. 
@@ -118,39 +106,23 @@ Option 2: use module
 $ module load gcc/8.3.1  # or desired gcc version
 ```
 
-Build `krowkee`.
+Build `krowkee`. `krowkee` is a library, so it has no default compile targets.
+Toggle on different compile targets with the following arguments
+`KROWKEE_BUILD_TESTS`, `KROWKEE_BUILD_EXAMPLES`, and
+`KROWKEE_BUILD_PERFORMANCE`. So, to build the tests and examples (including the optional YGM exes) but NOT the performance benchmarks, use
 ``` bash
-$ cmake ..
+$ cmake .. \
+  -DKROWKEE_USE_YGM=ON \
+  -DKROWKEE_BUILD_TESTS=ON \
+  -DKROWKEE_BUILD_EXAMPLES=ON \
+  -DKROWKEE_BUILD_PERFORMANCE=OFF \
+  -DCMAKE_BUILD_TYPE=Release
 $ make
 ```
-
-Alternately, we can build the local-only version of `krowkee` which will not
-use `ygm`, `cereal`, or MPI.
-``` bash
-$ cmake .. -DKROWKEE_USE_YGM=OFF
-$ make
-```
-
-### Installation
-
-`krowkee` build system supports local installation of it and all dependent 
-header-only libraries (`ygm` and `cereal`) via `make install`. 
-If operating on a system without write permissions to CMake's default 
-installtion locations, set the `CMAKE_INSTALL PREFIX`:
-
-``` bash
-$ export CMAKE_USER_INSTALL_PREFIX='/desired/install/path'
-$ cmake .. -DCMAKE_INSTALL_PREFIX=${CMAKE_USER_INSTALL_PREFIX}
-$ make
-$ make install
-```
-
-It is most likely worth setting this `CMAKE_USER_INSTALL_PREFIX` and adding it
-to your `CMAKE_PREFIX_PATH` in your `.profile`, `.bashrc`, or equivalent.  
 
 ## Testing
 
-It is easy to run all test cases once krowkee is built by running
+It is easy to run all test cases once krowkee is built as above by running
 ``` bash
 make test
 ```
@@ -158,16 +130,41 @@ make test
 Alternately, one can directly run individual test cases with more options and 
 verbose outputs, e.g.
 ``` bash
-$ ./test/SEQ_local_linearsketch_test
+$ ./test/linearsketch_test
+```
+or
+``` bash
+$ mpirun -n 4 ./test/ygm/power_iteration_test
 ```
 
 All tests support an `-h` flag listing options.
+
+## Building docs
+
+`krowkee`'s documentation is produced using
+[doxygen](https://www.doxygen.nl/index.html) and
+[sphinx](https://www.sphinx-doc.org/en/master/index.html).
+Documentation is hosted on
+[readthedocs](https://krowkee.readthedocs.io/en/latest/index.html).
+
+To locally build the documentation, use the cmake argument
+`-DKROKEE_DOXYGEN=ON` during the build and then compile all targets.
+Instal the sphinx dependencies in a python environment via
+```bash
+$ pip install -r docs/rtd/requirements.txt
+```
+The documentation can then be locally constructed from the build directory via
+```
+$ make sphinx
+```
+Finally, open the file `build/docs/rtd/sphinx/index.html` in your browser of
+choice.
 
 # About
 
 ## Authors
 
-* Benjamin W. Priest (priest2 at llnl dot gov)
+* Min W. Priest (priest2 at llnl dot gov)
 * Alec Dunton (dunton1 at llnl dot gov)
 
 # License

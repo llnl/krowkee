@@ -1,4 +1,4 @@
-// Copyright 2021-2022 Lawrence Livermore National Security, LLC and other
+// Copyright 2021-2026 Lawrence Livermore National Security, LLC and other
 // krowkee Project Developers. See the top-level COPYRIGHT file for details.
 //
 // SPDX-License-Identifier: MIT
@@ -50,6 +50,7 @@ struct Base {
   }
 
   static constexpr std::uint64_t get_range() { return _log2_kernel_range_size; }
+  static constexpr std::size_t   range_size() { return RangeSize; }
   static constexpr std::size_t   size() {
     return _1u64 << (64 - _log2_kernel_range_size);
   }
@@ -121,7 +122,7 @@ struct WangHash : public Base<RangeSize> {
    */
   static constexpr std::string full_name() {
     std::stringstream ss;
-    ss << name() << " with range " << self_type::size();
+    ss << name() << "<" << self_type::size() << ">";
     return ss.str();
   }
 
@@ -197,6 +198,9 @@ struct MulShift : public Base<RangeSize> {
   /**
    * Compute `_multiplicand * x mod _log2_kernel_range_size`.
    *
+   * +1 is added to x to handle settings where x could be zero. This behavior
+   * can be removed by defining the `KROWKEE_NOZERO` precompiler flag.
+   *
    * @tparam OBJ the object to be hashed. Presently must fit into a 64-bit
    *     register.
    *
@@ -204,7 +208,11 @@ struct MulShift : public Base<RangeSize> {
    */
   template <typename OBJ>
   constexpr std::uint64_t operator()(const OBJ &x) const {
+#ifdef KROWKEE_NOZERO
     return this->truncate(_multiplicand * x);
+#else
+    return this->truncate(_multiplicand * (x + 1));
+#endif
   }
 
   /**
@@ -214,7 +222,7 @@ struct MulShift : public Base<RangeSize> {
 
   static constexpr std::string full_name() {
     std::stringstream ss;
-    ss << name() << " with range " << self_type::size();
+    ss << name() << "<" << self_type::size() << ">";
     return ss.str();
   }
 
@@ -267,7 +275,7 @@ struct MulAddShift : public Base<RangeSize> {
    * `seed`.
    *
    * `_multiplicand` and `_summand` are randomly sampled from [0, 2^64 - 1] and
-   * [0, 2^size() - 1], respectively.
+   * [0, range_size() - 1], respectively.
    *
    * @tparam ARGS types of additional (ignored) hash functor arguments.
    *
@@ -292,6 +300,9 @@ struct MulAddShift : public Base<RangeSize> {
   /**
    * Compute `_multiplicand * x + _summand mod _log2_kernel_range_size`.
    *
+   * +1 is added to x to handle settings where x could be zero. This behavior
+   * can be removed by defining the `KROWKEE_NOZERO` precompiler flag.
+   *
    * @tparam OBJ the object to be hashed. Presently must fit into a 64-bit
    *     register.
    *
@@ -299,7 +310,11 @@ struct MulAddShift : public Base<RangeSize> {
    */
   template <typename OBJ>
   constexpr std::uint64_t operator()(const OBJ &x) const {
+#ifdef KROWKEE_NOZERO
     return this->truncate(_multiplicand * x + _summand);
+#else
+    return this->truncate(_multiplicand * (x + 1) + _summand);
+#endif
   }
 
   /**
@@ -312,7 +327,7 @@ struct MulAddShift : public Base<RangeSize> {
    */
   static constexpr std::string full_name() {
     std::stringstream ss;
-    ss << name() << " with range " << self_type::size();
+    ss << name() << "<" << self_type::size() << ">";
     return ss.str();
   }
 
