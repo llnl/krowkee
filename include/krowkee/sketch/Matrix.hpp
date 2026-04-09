@@ -384,7 +384,7 @@ class Matrix {
   /** The size of the embedding. Equal to RowCount and ColCount. Assuming that
    * the matrix is square.
    */
-  static constexpr std::size_t embedding_size() { return RowCount; }
+  static constexpr std::size_t embedding_size() { return RowCount * ColCount; }
 
   /** The number of bytes used by each register. */
   constexpr std::size_t reg_size() const { return sizeof(register_type); }

@@ -672,7 +672,10 @@ struct power_iteration_check {
     double expected_epsilon = std::sqrt(
         16 *
         (norm + std::log(col_count * (transform_count - 1) *
-                         sketch_type::transform_type::replication_count())) /
+                         sketch_type::transform_type::row_transform_type::
+                             replication_count() *
+                         sketch_type::transform_type::col_transform_type::
+                             replication_count())) /
         params.range_size);
     int trials(0);
     for (int i(0); i < col_count; ++i) {
