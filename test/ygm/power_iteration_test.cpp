@@ -194,11 +194,13 @@ void agreement_parallel_matrix(
       name + " low maximum absolute error (" + std::to_string(max_error) + ")");
 }
 
-template <typename DoubleSketchType>
-std::vector<Eigen::MatrixXd> serial_accumulate_double_matrices(
+template <typename DoubleSketchType, typename FinalSketchType>
+std::pair<std::vector<Eigen::MatrixXd>, Eigen::MatrixXd>
+serial_accumulate_double_matrices(
     const Eigen::MatrixXd &matrix_A,
     std::vector<typename DoubleSketchType::transform_ptr_type>
-        &double_transform_ptrs) {
+                                                 &double_transform_ptrs,
+    typename FinalSketchType::transform_ptr_type &final_transform_ptr) {
   // We create the double matrices array
   std::vector<Eigen::MatrixXd> serial_double_matrices;
 
@@ -208,6 +210,7 @@ std::vector<Eigen::MatrixXd> serial_accumulate_double_matrices(
   for (const auto &double_transform_ptr : double_transform_ptrs) {
     serial_double_sketches.emplace_back(double_transform_ptr);
   }
+  FinalSketchType serial_final_sketch(final_transform_ptr);
 
   // We apply the double sketches to each element of `matrix_A` in a single
   // pass.
@@ -220,6 +223,7 @@ std::vector<Eigen::MatrixXd> serial_accumulate_double_matrices(
         // `S^tAR`
         double_sketch.insert({i, j}, element);
       }
+      serial_final_sketch.insert({i, j}, element);
       ++j;
     }
     ++i;
@@ -229,19 +233,26 @@ std::vector<Eigen::MatrixXd> serial_accumulate_double_matrices(
   for (const DoubleSketchType &double_sketch : serial_double_sketches) {
     serial_double_matrices.push_back(double_sketch.scaled_registers());
   }
+  Eigen::MatrixXd serial_final_matrix = serial_final_sketch.scaled_registers();
 
-  return serial_double_matrices;
+  return {serial_double_matrices, serial_final_matrix};
 }
 
-template <typename DoubleSketchType>
-std::vector<Eigen::MatrixXd> parallel_accumulate_double_matrices(
+template <typename DoubleSketchType, typename FinalSketchType>
+std::pair<std::vector<Eigen::MatrixXd>, Eigen::MatrixXd>
+parallel_accumulate_double_matrices(
     const Eigen::MatrixXd                     &matrix_A,
     ygm::container::map<int, Eigen::VectorXd> &parallel_matrix_AS,
     std::vector<typename DoubleSketchType::transform_ptr_type>
-        &double_transform_ptrs) {
+                                                 &double_transform_ptrs,
+    typename FinalSketchType::transform_ptr_type &final_transform_ptr) {
   using double_sketch_type = DoubleSketchType;
   using double_transform_ptr_type =
       typename DoubleSketchType::transform_ptr_type;
+  using final_sketch_type    = FinalSketchType;
+  using final_transform_type = typename final_sketch_type::transform_type;
+  using final_transform_ptr_type =
+      typename final_sketch_type::transform_ptr_type;
 
   ygm::comm &comm = parallel_matrix_AS.comm();
 
@@ -252,9 +263,11 @@ std::vector<Eigen::MatrixXd> parallel_accumulate_double_matrices(
        double_transform_ptrs) {
     parallel_double_sketches.emplace_back(double_transform_ptr);
   }
+  static final_sketch_type parallel_final_sketch(final_transform_ptr);
 
   // We apply the double sketches to each element of `matrix_A` in a single
-  // pass. In practice this could be interleaved with the accumulation of AS.
+  // pass. In practice this could be interleaved with the accumulation of
+  // AS.
   for (int col_idx(0); col_idx < matrix_A.cols(); ++col_idx) {
     if (comm.rank() == (col_idx % comm.size())) {
       for (int row_idx(0); row_idx < matrix_A.rows(); ++row_idx) {
@@ -266,6 +279,7 @@ std::vector<Eigen::MatrixXd> parallel_accumulate_double_matrices(
           for (double_sketch_type &double_sketch : parallel_double_sketches) {
             double_sketch.insert({row_idx, col_idx}, update);
           }
+          parallel_final_sketch.insert({row_idx, col_idx}, update);
         };
         parallel_matrix_AS.async_visit(row_idx, insert_lambda, col_idx,
                                        matrix_A(row_idx, col_idx));
@@ -294,8 +308,21 @@ std::vector<Eigen::MatrixXd> parallel_accumulate_double_matrices(
     parallel_double_matrices[i] /=
         DoubleSketchType::transform_type::scaling_factor;
   }
+  Eigen::MatrixXd parallel_final_matrix =
+      Eigen::MatrixXd::Zero(final_transform_type::row_transform_type::size(),
+                            final_transform_type::col_transform_type::size());
+  {
+    const Eigen::MatrixXd &local_final_matrix =
+        parallel_final_sketch.container().registers();
+    YGM_ASSERT_MPI(MPI_Allreduce(
+        local_final_matrix.data(), parallel_final_matrix.data(),
+        local_final_matrix.rows() * local_final_matrix.cols(),
+        ygm::detail::mpi_typeof(double()), MPI_SUM, comm.get_mpi_comm()));
+    comm.barrier();
+    parallel_final_matrix /= final_transform_type::scaling_factor;
+  }
 
-  return parallel_double_matrices;
+  return {parallel_double_matrices, parallel_final_matrix};
 }
 
 void agreement_double_matrices(
@@ -521,7 +548,8 @@ lemma_results lemma_check(ygm::comm &comm, const std::string &&name,
   return results;
 }
 
-template <typename SingleSketchType, typename DoubleSketchType>
+template <typename SingleSketchType, typename DoubleSketchType,
+          typename FinalSketchType>
 struct power_iteration_check {
   using single_sketch_type    = SingleSketchType;
   using single_transform_type = typename single_sketch_type::transform_type;
@@ -531,6 +559,14 @@ struct power_iteration_check {
   using double_transform_type = typename double_sketch_type::transform_type;
   using double_transform_ptr_type =
       typename double_sketch_type::transform_ptr_type;
+  using final_sketch_type    = FinalSketchType;
+  using final_transform_type = typename final_sketch_type::transform_type;
+  using final_transform_ptr_type =
+      typename final_sketch_type::transform_ptr_type;
+  using final_col_transform_type =
+      typename final_transform_type::col_transform_type;
+  using final_col_transform_ptr_type =
+      typename final_transform_type::col_transform_ptr_type;
 
   static_assert(
       std::is_same<single_transform_type,
@@ -538,6 +574,9 @@ struct power_iteration_check {
   static_assert(
       std::is_same<single_transform_type,
                    typename double_transform_type::col_transform_type>::value);
+  static_assert(
+      std::is_same<single_transform_type,
+                   typename final_transform_type::row_transform_type>::value);
 
   constexpr std::string name() const {
     std::stringstream ss;
@@ -548,21 +587,30 @@ struct power_iteration_check {
   void operator()(ygm::comm &world, const Parameters &params) const {
     const std::size_t row_count(params.count);
     const std::size_t col_count(row_count);
+    const int         single_transform_count = params.transform_count - 1;
+    const int         double_transform_count = single_transform_count - 1;
 
     // We create a vector of shared pointers for each of the individual
     // sketch transforms.
     std::vector<single_transform_ptr_type> single_transform_ptrs;
-    for (int i(0); i < params.transform_count; ++i) {
+    for (int i(0); i < single_transform_count; ++i) {
       single_transform_ptrs.push_back(
           std::make_shared<single_transform_type>(params.seed + i));
     }
+    final_col_transform_ptr_type final_col_transform_ptr(
+        std::make_shared<final_col_transform_type>(params.seed +
+                                                   params.transform_count));
+
     // Using these shared pointers, we now create a vector of pointers to all
     // of the two-sided sketch transforms.
     std::vector<double_transform_ptr_type> double_transform_ptrs;
-    for (int i(0); i < params.transform_count - 1; ++i) {
+    for (int i(0); i < double_transform_count; ++i) {
       double_transform_ptrs.push_back(std::make_shared<double_transform_type>(
           single_transform_ptrs[i], single_transform_ptrs[i + 1]));
     }
+    final_transform_ptr_type final_transform_ptr(
+        std::make_shared<double_transform_type>(single_transform_ptrs.back(),
+                                                final_col_transform_ptr));
 
     // We sample a random matrix to embed. Note that this is not implemented
     // efficiently, as this is a toy example and we will compute a ground
@@ -583,16 +631,27 @@ struct power_iteration_check {
                               parallel_matrix_AS, params);
 
     // We create the serial two-sided matrices
-    std::vector<Eigen::MatrixXd> serial_double_matrices =
-        serial_accumulate_double_matrices<double_sketch_type>(
-            matrix_A, double_transform_ptrs);
+    auto [serial_double_matrices, serial_final_matrix] =
+        serial_accumulate_double_matrices<double_sketch_type,
+                                          final_sketch_type>(
+            matrix_A, double_transform_ptrs, final_transform_ptr);
     // We create the parallel two-sided matrices
-    std::vector<Eigen::MatrixXd> parallel_double_matrices =
-        parallel_accumulate_double_matrices<double_sketch_type>(
-            matrix_A, parallel_matrix_AS, double_transform_ptrs);
+    auto [parallel_double_matrices, parallel_final_matrix] =
+        parallel_accumulate_double_matrices<double_sketch_type,
+                                            final_sketch_type>(
+            matrix_A, parallel_matrix_AS, double_transform_ptrs,
+            final_transform_ptr);
     // We confirm that both implementations arrive at close double matrices.
     agreement_double_matrices(world, serial_double_matrices,
                               parallel_double_matrices);
+    {
+      // this is really wasteful but fine for small tests
+      std::vector<Eigen::MatrixXd> serial_dummy;
+      serial_dummy.push_back(serial_final_matrix);
+      std::vector<Eigen::MatrixXd> parallel_dummy;
+      parallel_dummy.push_back(parallel_final_matrix);
+      agreement_double_matrices(world, serial_dummy, parallel_dummy);
+    }
 
     // We compute the partial products for both serial and parallel
     // implementations.
@@ -600,17 +659,19 @@ struct power_iteration_check {
     for (int i(1); i < serial_double_matrices.size(); ++i) {
       serial_product_partial *= serial_double_matrices[i];
     }
+    serial_product_partial *= serial_final_matrix;
     Eigen::MatrixXd parallel_product_partial = parallel_double_matrices[0];
     for (int i(1); i < parallel_double_matrices.size(); ++i) {
       parallel_product_partial *= parallel_double_matrices[i];
     }
+    parallel_product_partial *= parallel_final_matrix;
     // We confirm that both implementations arrive at close partial products
     agreement_matrices(world, "partial products", serial_product_partial,
                        parallel_product_partial);
 
     // We compute the serial power iteration product.
     Eigen::MatrixXd serial_product_exact =
-        serial_multiplication_exact(matrix_A, serial_double_matrices.size());
+        serial_multiplication_exact(matrix_A, params.transform_count - 1);
 
     // We confirm that serial and parallel iterative products are close.
     Eigen::MatrixXd serial_product_iterative = serial_multiplication_iterative(
@@ -802,6 +863,10 @@ void perform_tests(ygm::comm &world, const Parameters &params) {
   using double_sketch_type =
       krowkee::sketch::DoubleSparseJLT<register_type, RangeSize,
                                        ReplicationCount, std::shared_ptr>;
+  using final_sketch_type =
+      krowkee::sketch::DoubleSparseJLT<register_type, RangeSize,
+                                       ReplicationCount, std::shared_ptr,
+                                       RangeSize, ReplicationCount>;
   krowkee::print_line(world);
   krowkee::print_line(world);
   world.cout0("Testing ", double_sketch_type::full_name());
@@ -811,9 +876,9 @@ void perform_tests(ygm::comm &world, const Parameters &params) {
 
   world.cout0("\n");
 
-  krowkee::do_ygm_test<
-      power_iteration_check<single_sketch_type, double_sketch_type>>(
-      world, world, params);
+  krowkee::do_ygm_test<power_iteration_check<
+      single_sketch_type, double_sketch_type, final_sketch_type>>(world, world,
+                                                                  params);
 }
 
 int main(int argc, char **argv) {
