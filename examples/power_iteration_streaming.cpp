@@ -69,7 +69,7 @@ int main(int argc, char **argv) {
   // embedding down into a smaller dimension, which allows the storage of
   // higher-precision inter-matrix sketches while producing a smaller final
   // embedding.
-  constexpr const std::size_t final_range_size        = 128;
+  constexpr const std::size_t final_range_size        = 8;
   constexpr const std::size_t final_replication_count = 4;
   using final_double_sketch_type = krowkee::sketch::DoubleSparseJLT<
       register_type, range_size, replication_count, std::shared_ptr,

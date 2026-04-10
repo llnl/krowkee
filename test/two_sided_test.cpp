@@ -929,7 +929,7 @@ void perform_tests(const Parameters &params) {
   do_test<good_merge_check<sketch_type, MakePtrFunc>>(params);
   do_test<ingest_check<sketch_type, MakePtrFunc>>(params);
   do_test<power_iteration_check<matrix::DoubleSparseJLT<128, 4>,
-                                matrix::DoubleSparseJLT<128, 4, 128, 4>,
+                                matrix::DoubleSparseJLT<128, 4, 8, 4>,
                                 MakePtrFunc>>(params);
 #if __has_include(<cereal/cereal.hpp>)
   do_test<serialize_check<sketch_type, MakePtrFunc>>(params);

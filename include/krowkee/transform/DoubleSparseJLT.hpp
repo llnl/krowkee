@@ -76,10 +76,6 @@ class DoubleSparseJLT {
    * transform and column transform feature feature 4 and 2 replications will
    * result in updating 8 total indices in the matrix data structure.
    *
-   * The implementation currently assumes that the row and column hashes use the
-   * same functional form, meaning that the underlying Matrix data structure
-   * will always be square.
-   *
    * @note This behavior may change in the future.
    *
    * @tparam Args type(s) of additional hash parameters

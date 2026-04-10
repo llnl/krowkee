@@ -609,8 +609,8 @@ struct power_iteration_check {
           single_transform_ptrs[i], single_transform_ptrs[i + 1]));
     }
     final_transform_ptr_type final_transform_ptr(
-        std::make_shared<double_transform_type>(single_transform_ptrs.back(),
-                                                final_col_transform_ptr));
+        std::make_shared<final_transform_type>(single_transform_ptrs.back(),
+                                               final_col_transform_ptr));
 
     // We sample a random matrix to embed. Note that this is not implemented
     // efficiently, as this is a toy example and we will compute a ground
@@ -855,7 +855,8 @@ void parse_args(int argc, char **argv, Parameters &params) {
 
 using register_type = double;
 
-template <std::size_t RangeSize, std::size_t ReplicationCount>
+template <std::size_t RangeSize, std::size_t ReplicationCount,
+          std::size_t FinalRangeSize, std::size_t FinalReplicationCount>
 void perform_tests(ygm::comm &world, const Parameters &params) {
   using single_sketch_type =
       krowkee::sketch::SparseJLT<register_type, RangeSize, ReplicationCount,
@@ -866,7 +867,7 @@ void perform_tests(ygm::comm &world, const Parameters &params) {
   using final_sketch_type =
       krowkee::sketch::DoubleSparseJLT<register_type, RangeSize,
                                        ReplicationCount, std::shared_ptr,
-                                       RangeSize, ReplicationCount>;
+                                       FinalRangeSize, FinalReplicationCount>;
   krowkee::print_line(world);
   krowkee::print_line(world);
   world.cout0("Testing ", double_sketch_type::full_name());
@@ -897,19 +898,22 @@ int main(int argc, char **argv) {
     //   4. a shared pointer type to be used by the shared transform object
     //      (`std::shared_ptr` for shared memory implementations).
 
-    uint64_t                    count             = 256;
-    constexpr const std::size_t range_size        = 128;
-    constexpr const std::size_t replication_count = 4;
-    uint64_t                    transform_count   = 4;
-    std::uint64_t               seed              = 4;
-    bool                        verbose           = false;
+    uint64_t                    count                   = 256;
+    constexpr const std::size_t range_size              = 128;
+    constexpr const std::size_t replication_count       = 4;
+    constexpr const std::size_t final_range_size        = 8;
+    constexpr const std::size_t final_replication_count = 4;
+    uint64_t                    transform_count         = 4;
+    std::uint64_t               seed                    = 4;
+    bool                        verbose                 = false;
     bool                        do_all(argc == 1);
 
     Parameters params{count,           range_size, replication_count,
                       transform_count, seed,       verbose};
     parse_args(argc, argv, params);
 
-    perform_tests<range_size, replication_count>(world, params);
+    perform_tests<range_size, replication_count, final_range_size,
+                  final_replication_count>(world, params);
   }
   return 0;
 }
