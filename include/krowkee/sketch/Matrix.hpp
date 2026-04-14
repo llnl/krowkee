@@ -145,20 +145,13 @@ class Matrix {
   using merge_type = MergeOp<register_type>;
   using self_type  = Matrix<register_type, MergeOp, RowCount, ColCount>;
 
-  /**
-   * Currently assuming that Matrix Objects are always square, but preparing for
-   * a world where they aren't.
-   */
-  static_assert(RowCount == ColCount);
-
  protected:
   static const std::size_t Size = RowCount * ColCount;
   registers_type           _registers;
 
  public:
   /**
-   * @brief Construct a new Matrix container object. Currently assuming that
-   * Matrix objects are always square.
+   * @brief Construct a new Matrix container object.
    */
   Matrix() : _registers(registers_type::Zero(RowCount, ColCount)) {}
 
@@ -381,10 +374,9 @@ class Matrix {
   /** The size of the registers vector. */
   static constexpr std::size_t max_size() { return Size; }
 
-  /** The size of the embedding. Equal to RowCount and ColCount. Assuming that
-   * the matrix is square.
+  /** The size of the embedding. Equal to RowCount * ColCount.
    */
-  static constexpr std::size_t embedding_size() { return RowCount; }
+  static constexpr std::size_t embedding_size() { return RowCount * ColCount; }
 
   /** The number of bytes used by each register. */
   constexpr std::size_t reg_size() const { return sizeof(register_type); }

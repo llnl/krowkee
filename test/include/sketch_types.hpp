@@ -65,10 +65,13 @@ using FWHT =
 }  // namespace dense
 
 namespace matrix {
-template <std::size_t RangeSize, std::size_t ReplicationCount>
+template <std::size_t RowRangeSize, std::size_t RowReplicationCount,
+          std::size_t ColRangeSize        = RowRangeSize,
+          std::size_t ColReplicationCount = RowReplicationCount>
 using DoubleSparseJLT =
-    krowkee::sketch::DoubleSparseJLT<register_type, RangeSize, ReplicationCount,
-                                     ptr_type>;
+    krowkee::sketch::DoubleSparseJLT<register_type, RowRangeSize,
+                                     RowReplicationCount, ptr_type,
+                                     ColRangeSize, ColReplicationCount>;
 }
 
 namespace sparse {

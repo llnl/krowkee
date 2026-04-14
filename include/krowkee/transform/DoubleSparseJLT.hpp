@@ -33,30 +33,28 @@ using krowkee::stream::Element;
  * Journal of the ACM. 2017.
  * http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.746.6409&rep=rep1&type=pdf
  *
- * @tparam RegType The type of register over which the functor operates
- * @tparam HashType The hash functor type to use to define CountSketch random
- * mappings.
  * @tparam PtrType The type of shared pointer used to wrap individual sketch
  * functors.
- * @tparam RangeSize The power-of-two embedding dimension.
+ * @tparam RowTransformType The transform.
  * @tparam ReplicationCount The number of replicated CountSketch transforms to
  * use.
  */
-template <typename RegType, template <std::size_t> class HashType,
-          template <typename> class PtrType, std::size_t RangeSize,
-          std::size_t ReplicationCount>
+template <template <typename> class PtrType, typename RowTransformType,
+          typename ColTransformType = RowTransformType>
 class DoubleSparseJLT {
  public:
-  using register_type = RegType;
-  using hash_type     = HashType<RangeSize>;
-  using row_transform_type =
-      SparseJLT<RegType, HashType, RangeSize, ReplicationCount>;
+  using row_transform_type     = RowTransformType;
   using row_transform_ptr_type = PtrType<row_transform_type>;
-  using col_transform_type =
-      SparseJLT<RegType, HashType, RangeSize, ReplicationCount>;
+  using col_transform_type     = ColTransformType;
   using col_transform_ptr_type = PtrType<col_transform_type>;
-  using self_type = DoubleSparseJLT<register_type, HashType, PtrType, RangeSize,
-                                    ReplicationCount>;
+
+  static_assert(
+      std::is_same<typename row_transform_type::register_type,
+                   typename col_transform_type::register_type>::value);
+  using register_type = row_transform_type::register_type;
+
+  using self_type =
+      DoubleSparseJLT<PtrType, row_transform_type, col_transform_type>;
   using indices_type    = typename row_transform_type::indices_type;
   using polarities_type = typename row_transform_type::polarities_type;
   using update_type     = typename row_transform_type::update_type;
@@ -67,20 +65,16 @@ class DoubleSparseJLT {
 
  public:
   /**
-   * @brief Construct a new DoubleSparseJLT Functor object by initializing hash
-   * functors.
+   * @brief Construct a new DoubleSparseJLT Functor object by initializing both
+   * row and col transforms.
    *
    * Depending on the hash functor to be used, the effective embedding dimension
    * (returned by `this->size()`) may be rounded up to the next power of two.
    * Each insert is hashed to one row and one column location for each
    * combination of ReplicationCount register replicas in the rows and columns
-   * of the two-sided sketch. E.g., an insert to a sketch with whose row and
-   * columns feature 4 replications will result in updating 16 total indices in
-   * the matrix data structure.
-   *
-   * The implementation currently assumes that the row and column hashes use the
-   * same functional form, meaning that the underlying Matrix data structure
-   * will always be square.
+   * of the two-sided sketch. E.g., an insert to a sketch with whose row
+   * transform and column transform feature feature 4 and 2 replications will
+   * result in updating 8 total indices in the matrix data structure.
    *
    * @note This behavior may change in the future.
    *
@@ -135,8 +129,8 @@ class DoubleSparseJLT {
     update_type row_hashes = _row_transform_ptr->apply(stream_element.item);
     update_type col_hashes =
         _col_transform_ptr->apply(stream_element.identifier);
-    for (int i(0); i < ReplicationCount; ++i) {
-      for (int j(0); j < ReplicationCount; ++j) {
+    for (int i(0); i < row_transform_type::replication_count(); ++i) {
+      for (int j(0); j < col_transform_type::replication_count(); ++j) {
         const std::pair<std::uint64_t, std::uint64_t> indices = {
             row_hashes.first[i], col_hashes.first[j]};
         register_type &reg      = registers[indices];
@@ -154,29 +148,11 @@ class DoubleSparseJLT {
   // Getters
   //////////////////////////////////////////////////////////////////////////////
   /**
-   * @brief Get the maximum number of range values returnable by the register
-   * hash function.
-   *
-   * This is equivalent to the number of registers in each replicated tile in
-   * passed containers.
-   *
-   * @return constexpr std::size_t The range size.
-   */
-  static constexpr std::size_t range_size() { return hash_type::size(); }
-
-  /**
-   * @brief Get the number of replicated CountSketch transforms.
-   *
-   * @return constexpr std::size_t The replication count.
-   */
-  static constexpr std::size_t replication_count() { return ReplicationCount; }
-
-  /**
    * @brief Get the scaling factor to be used for projections.
    *
    * @return constexpr std::size_t The replication count.
    */
-  static constexpr RegType scaling_factor =
+  static constexpr register_type scaling_factor =
       row_transform_type::scaling_factor * col_transform_type::scaling_factor;
 
   /**
@@ -188,7 +164,7 @@ class DoubleSparseJLT {
    * @return constexpr std::size_t The range size.
    */
   static constexpr std::size_t size() {
-    return range_size() * replication_count();
+    return row_transform_type::size() * col_transform_type::size();
   }
 
   /** Get the random seed. */
@@ -201,8 +177,8 @@ class DoubleSparseJLT {
    */
   static constexpr std::string name() {
     std::stringstream ss;
-    ss << "DoubleSparseJLT<" << RangeSize << ", " << ReplicationCount << ", "
-       << hash_type::name() << ">";
+    ss << "DoubleSparseJLT<" << row_transform_type::name() << ", "
+       << col_transform_type::name() << ">";
     return ss.str();
   }
 
@@ -214,8 +190,8 @@ class DoubleSparseJLT {
    */
   static constexpr std::string full_name() {
     std::stringstream ss;
-    ss << "DoubleSparseJLT<" << RangeSize << ", " << ReplicationCount << ", "
-       << hash_type::full_name() << ", " << sizeof(register_type) << ">";
+    ss << "DoubleSparseJLT<" << row_transform_type::full_name() << ", "
+       << col_transform_type::full_name() << ">";
     return ss.str();
   }
 
@@ -258,8 +234,8 @@ class DoubleSparseJLT {
    * @return std::ostream& The new stream state.
    */
   friend std::ostream &operator<<(std::ostream &os, const self_type &func) {
-    os << func.range_size() << " " << func.replication_count() << " "
-       << func.seed();
+    os << "rows: " << *func._row_transform_ptr
+       << ", cols: " << *func._col_transform_ptr;
     return os;
   }
 };

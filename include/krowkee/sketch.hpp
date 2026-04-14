@@ -41,13 +41,21 @@ using SparseJLT = krowkee::sketch::Sketch<
     krowkee::sketch::Dense<RegType, std::plus, RangeSize * ReplicationCount>,
     PtrType>;
 
-template <typename RegType, std::size_t RangeSize, std::size_t ReplicationCount,
-          template <typename> class PtrType = std::shared_ptr>
+template <typename RegType, std::size_t RowRangeSize,
+          std::size_t RowReplicationCount,
+          template <typename> class PtrType = std::shared_ptr,
+          std::size_t ColRangeSize          = RowRangeSize,
+          std::size_t ColReplicationCount   = RowReplicationCount>
 using DoubleSparseJLT = krowkee::sketch::Sketch<
-    krowkee::transform::DoubleSparseJLT<RegType, krowkee::hash::CountSketchHash,
-                                        PtrType, RangeSize, ReplicationCount>,
-    krowkee::sketch::Matrix<RegType, std::plus, RangeSize * ReplicationCount,
-                            RangeSize * ReplicationCount>,
+    krowkee::transform::DoubleSparseJLT<
+        PtrType,
+        krowkee::transform::SparseJLT<RegType, krowkee::hash::CountSketchHash,
+                                      RowRangeSize, RowReplicationCount>,
+        krowkee::transform::SparseJLT<RegType, krowkee::hash::CountSketchHash,
+                                      ColRangeSize, ColReplicationCount>>,
+    krowkee::sketch::Matrix<RegType, std::plus,
+                            RowRangeSize * RowReplicationCount,
+                            ColRangeSize * ColReplicationCount>,
     PtrType>;
 
 template <typename RegType, std::size_t RangeSize, std::size_t ReplicationCount,
