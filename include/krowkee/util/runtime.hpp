@@ -73,111 +73,64 @@ ReturnType dispatch_with_sketch_sizes(const std::size_t &range_size,
   }
 }
 
-template <template <std::size_t, std::size_t> class Func, typename ReturnType,
-          typename... Args>
-ReturnType dispatch_with_sketch_sizes(const std::size_t &range_size,
-                                      const std::size_t &replication_count,
-                                      Args &...args) {
-  switch (range_size) {
-    case 4:
-      switch (replication_count) {
-        case 1:
-          return Func<4, 1>{}(args...);
-          break;
-        case 2:
-          return Func<4, 2>{}(args...);
-          break;
-        case 4:
-          return Func<4, 4>{}(args...);
-          break;
-        case 8:
-          return Func<4, 8>{}(args...);
-          break;
-        default:
-          throw std::logic_error(
-              "dispatch_with_sketch_sizes() convenience function only accepts "
-              "power-of-2 replication count from 1-8. Hard-code or create a "
-              "new "
-              "dispatch function if you need an unsupported replication "
-              "count.");
-      }
-      break;
-    case 8:
-      switch (replication_count) {
-        case 1:
-          return Func<8, 1>{}(args...);
-          break;
-        case 2:
-          return Func<8, 2>{}(args...);
-          break;
-        case 4:
-          return Func<8, 4>{}(args...);
-          break;
-        case 8:
-          return Func<8, 8>{}(args...);
-          break;
-        default:
-          throw std::logic_error(
-              "dispatch_with_sketch_sizes() convenience function only accepts "
-              "power-of-2 replication count from 1-8. Hard-code or create a "
-              "new "
-              "dispatch function if you need an unsupported replication "
-              "count.");
-      }
-      break;
-    case 16:
-      switch (replication_count) {
-        case 1:
-          return Func<16, 1>{}(args...);
-          break;
-        case 2:
-          return Func<16, 2>{}(args...);
-          break;
-        case 4:
-          return Func<16, 4>{}(args...);
-          break;
-        case 8:
-          return Func<16, 8>{}(args...);
-          break;
-        default:
-          throw std::logic_error(
-              "dispatch_with_sketch_sizes() convenience function only accepts "
-              "power-of-2 replication count from 1-8. Hard-code or create a "
-              "new "
-              "dispatch function if you need an unsupported replication "
-              "count.");
-      }
-      break;
-    case 32:
-      switch (replication_count) {
-        case 1:
-          return Func<32, 1>{}(args...);
-          break;
-        case 2:
-          return Func<32, 2>{}(args...);
-          break;
-        case 4:
-          return Func<32, 4>{}(args...);
-          break;
-        case 8:
-          return Func<32, 8>{}(args...);
-          break;
-        default:
-          throw std::logic_error(
-              "dispatch_with_sketch_sizes() convenience function only accepts "
-              "power-of-2 replication count from 1-8. Hard-code or create a "
-              "new "
-              "dispatch function if you need an unsupported replication "
-              "count.");
-      }
-      break;
-    default:
-      throw std::logic_error(
-          "dispatch_with_sketch_sizes() convenience function only accepts "
-          "power-of-2 range size from 4-32. Hard-code or create a new dispatch "
-          "function if you need an unsupported range size.");
+#define DISPATCH_LEVEL0_CASE(SIZE0, SIZE1, ...) \
+  case SIZE0:                                   \
+    return Func<SIZE0, SIZE1>{}(__VA_ARGS__);
+#define DISPATCH_LEVEL1_CASE(SIZE1, SUB_FN, ...) \
+  case SIZE1:                                    \
+    _sizes.pop_back();                           \
+    return SUB_FN<SIZE1>(__VA_ARGS__);
+#define DISPATCH_ERROR_CASE(LEVEL, LOW, HIGH)                       \
+  default:                                                          \
+    std::stringstream ss;                                           \
+    ss << "dispatch() convenience functor only accepts power-of-2 " \
+          "sizes at level "                                         \
+       << LEVEL << " from " << LOW << "-" << HIGH                   \
+       << ". Hard-code or create a new dispatch functor "           \
+          "if you need an unsupported range size.";                 \
+    throw std::logic_error(ss.str());
+#define DISPATCH_SMALL_CASES(CASE_MACRO, LEVEL, ...) \
+  switch (_sizes.back()) {                           \
+    CASE_MACRO(1, __VA_ARGS__);                      \
+    CASE_MACRO(2, __VA_ARGS__);                      \
+    CASE_MACRO(4, __VA_ARGS__);                      \
+    CASE_MACRO(8, __VA_ARGS__);                      \
+    DISPATCH_ERROR_CASE(LEVEL, 1, 8);                \
   }
-}
+#define DISPATCH_MEDIUM_CASES(CASE_MACRO, LEVEL, ...) \
+  switch (_sizes.back()) {                            \
+    CASE_MACRO(4, __VA_ARGS__);                       \
+    CASE_MACRO(8, __VA_ARGS__);                       \
+    CASE_MACRO(16, __VA_ARGS__);                      \
+    CASE_MACRO(32, __VA_ARGS__);                      \
+    DISPATCH_ERROR_CASE(LEVEL, 4, 32);                \
+  }
+
+template <template <std::size_t, std::size_t> class Func, typename ReturnType>
+struct dispatch {
+ private:
+  std::vector<std::size_t> _sizes;
+
+  template <std::size_t Size, typename... Args>
+  ReturnType subdispatch_0(Args &...args) {
+    DISPATCH_MEDIUM_CASES(DISPATCH_LEVEL0_CASE, 0, Size, args...)
+  }
+
+ public:
+  template <typename... Sizes>
+  dispatch(const Sizes &...sizes) : _sizes{sizes...} {}
+
+  template <typename... Args>
+  ReturnType operator()(Args &...args) {
+    DISPATCH_SMALL_CASES(DISPATCH_LEVEL1_CASE, 1, subdispatch_0, args...);
+  }
+};
+
+#undef DISPATCH_LEVEL0_CASE
+#undef DISPATCH_LEVEL1_CASE
+#undef DISPATCH_ERROR_CASE
+#undef DISPATCH_SMALL_CASES
+#undef DISPATCH_MEDIUM_CASES
 
 template <typename FuncType, typename... Args>
 void do_test(Args &&...args) {
