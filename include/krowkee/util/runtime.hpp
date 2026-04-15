@@ -75,9 +75,11 @@ ReturnType dispatch_with_sketch_sizes(const std::size_t &range_size,
 
 template <template <std::size_t, std::size_t> class Func, typename ReturnType,
           typename... Args>
-ReturnType dispatch_with_sketch_sizes(const std::size_t &range_size,
-                                      const std::size_t &replication_count,
-                                      Args &...args) {
+[[deprecated(
+    "Will be removed in v0.4. Use krowkee::dispatch instead.")]] ReturnType
+dispatch_with_sketch_sizes(const std::size_t &range_size,
+                           const std::size_t &replication_count,
+                           Args &...args) {
   switch (range_size) {
     case 4:
       switch (replication_count) {
@@ -178,6 +180,125 @@ ReturnType dispatch_with_sketch_sizes(const std::size_t &range_size,
           "function if you need an unsupported range size.");
   }
 }
+
+#define DISPATCH_LEVEL0_CASE(SIZE0, FN, ...) \
+  case SIZE0:                                \
+    _sizes.pop_back();                       \
+    return FN<SIZE0>(__VA_ARGS__);
+#define DISPATCH_LEVEL1_CASE_TERMINAL(SIZE1, SIZE0, FN, ...) \
+  case SIZE1:                                                \
+    _sizes.pop_back();                                       \
+    return FN<SIZE1, SIZE0>{}(__VA_ARGS__);
+#define DISPATCH_LEVEL1_CASE(SIZE1, SIZE0, FN, ...) \
+  case SIZE1:                                       \
+    _sizes.pop_back();                              \
+    return FN<SIZE1, SIZE0>(__VA_ARGS__);
+#define DISPATCH_LEVEL2_CASE(SIZE2, SIZE1, SIZE0, FN, ...) \
+  case SIZE2:                                              \
+    _sizes.pop_back();                                     \
+    return FN<SIZE2, SIZE1, SIZE0>(__VA_ARGS__);
+#define DISPATCH_LEVEL3_CASE_TERMINAL(SIZE3, SIZE2, SIZE1, SIZE0, FN, ...) \
+  case SIZE3:                                                              \
+    _sizes.pop_back();                                                     \
+    return FN<SIZE3, SIZE2, SIZE1, SIZE0>{}(__VA_ARGS__);
+#define DISPATCH_ERROR_CASE(LEVEL, LOW, HIGH, VAL)                   \
+  default:                                                           \
+    std::stringstream ss;                                            \
+    ss << "dispatch() convenience functor only accepts power-of-2 "  \
+          "sizes at level "                                          \
+       << LEVEL << " from " << LOW << "-" << HIGH << ", not " << VAL \
+       << ". Hard-code or create a new dispatch functor "            \
+          "if you need an unsupported range size.";                  \
+    throw std::logic_error(ss.str());
+#define DISPATCH_SMALL_CASES(CASE_MACRO, LEVEL, ...) \
+  switch (_sizes.back()) {                           \
+    CASE_MACRO(1, __VA_ARGS__);                      \
+    CASE_MACRO(2, __VA_ARGS__);                      \
+    CASE_MACRO(4, __VA_ARGS__);                      \
+    CASE_MACRO(8, __VA_ARGS__);                      \
+    DISPATCH_ERROR_CASE(LEVEL, 1, 8, _sizes.back()); \
+  }
+#define DISPATCH_MEDIUM_CASES(CASE_MACRO, LEVEL, ...) \
+  switch (_sizes.back()) {                            \
+    CASE_MACRO(8, __VA_ARGS__);                       \
+    CASE_MACRO(16, __VA_ARGS__);                      \
+    CASE_MACRO(32, __VA_ARGS__);                      \
+    CASE_MACRO(64, __VA_ARGS__);                      \
+    DISPATCH_ERROR_CASE(LEVEL, 8, 64, _sizes.back()); \
+  }
+#define DISPATCH_LARGE_CASES(CASE_MACRO, LEVEL, ...)     \
+  switch (_sizes.back()) {                               \
+    CASE_MACRO(64, __VA_ARGS__);                         \
+    CASE_MACRO(128, __VA_ARGS__);                        \
+    CASE_MACRO(256, __VA_ARGS__);                        \
+    CASE_MACRO(512, __VA_ARGS__);                        \
+    CASE_MACRO(1024, __VA_ARGS__);                       \
+    DISPATCH_ERROR_CASE(LEVEL, 64, 1024, _sizes.back()); \
+  }
+
+template <template <std::size_t, std::size_t> class Func, typename ReturnType>
+struct dispatch {
+ protected:
+  std::vector<std::size_t> _sizes;
+
+  template <std::size_t Size0, typename... Args>
+  ReturnType subdispatch_0(Args &...args) {
+    DISPATCH_MEDIUM_CASES(DISPATCH_LEVEL1_CASE_TERMINAL, 1, Size0, Func,
+                          args...);
+  }
+
+ public:
+  template <typename... Sizes>
+  dispatch(const Sizes &...sizes) : _sizes{sizes...} {}
+
+  template <typename... Args>
+  ReturnType operator()(Args &...args) {
+    DISPATCH_SMALL_CASES(DISPATCH_LEVEL0_CASE, 0, subdispatch_0, args...);
+  }
+};
+
+template <
+    template <std::size_t, std::size_t, std::size_t, std::size_t> class Func,
+    typename ReturnType>
+struct dispatch_rectangular {
+ protected:
+  std::vector<std::size_t> _sizes;
+
+  template <std::size_t Size2, std::size_t Size1, std::size_t Size0,
+            typename... Args>
+  ReturnType subdispatch_2(Args &...args) {
+    DISPATCH_LARGE_CASES(DISPATCH_LEVEL3_CASE_TERMINAL, 3, Size2, Size1, Size0,
+                         Func, args...)
+  }
+
+  template <std::size_t Size1, std::size_t Size0, typename... Args>
+  ReturnType subdispatch_1(Args &...args) {
+    DISPATCH_SMALL_CASES(DISPATCH_LEVEL2_CASE, 2, Size1, Size0, subdispatch_2,
+                         args...)
+  }
+
+  template <std::size_t Size0, typename... Args>
+  ReturnType subdispatch_0(Args &...args) {
+    DISPATCH_MEDIUM_CASES(DISPATCH_LEVEL1_CASE, 1, Size0, subdispatch_1,
+                          args...);
+  }
+
+ public:
+  template <typename... Sizes>
+  dispatch_rectangular(const Sizes &...sizes) : _sizes{sizes...} {}
+
+  template <typename... Args>
+  ReturnType operator()(Args &...args) {
+    DISPATCH_SMALL_CASES(DISPATCH_LEVEL0_CASE, 0, subdispatch_0, args...);
+  }
+};
+
+#undef DISPATCH_LEVEL0_CASE
+#undef DISPATCH_LEVEL1_CASE
+#undef DISPATCH_ERROR_CASE
+#undef DISPATCH_SMALL_CASES
+#undef DISPATCH_MEDIUM_CASES
+#undef DISPATCH_LARGE_CASES
 
 template <typename FuncType, typename... Args>
 void do_test(Args &&...args) {

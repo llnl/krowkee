@@ -23,7 +23,6 @@
 #include <random>
 
 using krowkee::chirp;
-using krowkee::dispatch_with_sketch_sizes;
 using krowkee::do_test;
 using krowkee::make_shared_functor;
 using krowkee::print_line;
@@ -814,11 +813,11 @@ int main(int argc, char **argv) {
 
   // do_all_tests<32, 4>{}(params);
   if (do_all == true) {
-    dispatch_with_sketch_sizes<do_all_tests, void>(
-        params.range_size, params.replication_count, params);
+    krowkee::dispatch<do_all_tests, void>{params.range_size,
+                                          params.replication_count}(params);
   } else {
-    dispatch_with_sketch_sizes<choose_tests, void>(
-        params.range_size, params.replication_count, params);
+    krowkee::dispatch<choose_tests, void>{params.range_size,
+                                          params.replication_count}(params);
   }
   return 0;
 }

@@ -19,10 +19,10 @@
 // instance, the Johnson-Lindenstrauss implementations
 // `krowkee::sketch::SparseJLT` and `krowkee::sketch::FWHT` depend on two size
 // parameters `RangeSize` and `ReplicationCount`. Krowkee includes the
-// convenience function `krowkee::dispatch_with_sketch_sizes` for translating
-// runtime CLI parameters to dispatch these workflows using the corresponding
-// compile-time parameters. Note that the use of this function drastically
-// increases compile time.
+// convenience function `krowkee::dispatch` for translating runtime CLI
+// parameters to dispatch these workflows using the corresponding compile-time
+// parameters. Note that the use of this function can drastically increase
+// compile time.
 
 // // Here we make a functor defining the runtime behavior.
 template <std::size_t RangeSize, std::size_t ReplicationCount>
@@ -88,12 +88,12 @@ int main(int argc, char **argv) {
   runtime_functor<8, 2>{}();
 
   // To utilize the CLI parameters, use the following pattern.
-  // `krowkee:dispatch_with_sketch_sizes` can also take additional parameters
+  // `krowkee:dispatch` can also take additional parameters
   // and even supports returning a template type (`void` in this example). It
   // is also possible to define your own similar functions supporting
   // different options.
-  krowkee::dispatch_with_sketch_sizes<runtime_functor, void>(
-      params.range_size, params.replication_count);
+  krowkee::dispatch<runtime_functor, void>{params.range_size,
+                                           params.replication_count}();
 
   return 0;
 }

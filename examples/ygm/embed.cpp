@@ -199,7 +199,7 @@ int main(int argc, char **argv) {
   ygm::comm world(&argc, &argv);
   {
     parameters params = parse_args(argc, argv, world);
-    krowkee::dispatch_with_sketch_sizes<embed, void>(
-        params.range_size, params.replication_count, world, params);
+    krowkee::dispatch<embed, void>{params.range_size, params.replication_count}(
+        world, params);
   }
 }
