@@ -29,11 +29,13 @@ using krowkee::print_line;
  * Struct bundling the experiment parameters.
  */
 struct Parameters {
-  std::uint64_t count;
-  std::uint64_t range_size;
-  std::uint64_t replication_count;
-  std::uint64_t domain_size;
-  std::uint64_t observation_count;
+  std::size_t   count;
+  std::size_t   range_size;
+  std::size_t   replication_count;
+  std::size_t   internal_range_size;
+  std::size_t   internal_replication_count;
+  std::size_t   domain_size;
+  std::size_t   observation_count;
   std::uint64_t seed;
   bool          verbose;
 };
@@ -617,7 +619,8 @@ struct power_iteration_check {
 
   constexpr std::string name() const {
     std::stringstream ss;
-    ss << transform_type::name() << " power_iteration";
+    ss << transform_type::name() << " * " << final_transform_type::name()
+       << " power_iteration";
     return ss.str();
   }
 
@@ -905,7 +908,7 @@ struct spot_check {
 };
 
 /**
- * Execute the batter of tests for the given sketch functor.
+ * Execute the battery of tests for the given sketch functor.
  */
 template <typename SketchType, template <typename> class MakePtrFunc>
 void perform_tests(const Parameters &params) {
@@ -927,27 +930,29 @@ void perform_tests(const Parameters &params) {
   do_test<bad_merge_check<sketch_type, MakePtrFunc>>(params);
   do_test<good_merge_check<sketch_type, MakePtrFunc>>(params);
   do_test<ingest_check<sketch_type, MakePtrFunc>>(params);
-  do_test<power_iteration_check<matrix::DoubleSparseJLT<128, 4>,
-                                matrix::DoubleSparseJLT<128, 4, 8, 4>,
-                                MakePtrFunc>>(params);
 #if __has_include(<cereal/cereal.hpp>)
   do_test<serialize_check<sketch_type, MakePtrFunc>>(params);
 #endif
 }
 
 void print_help(char *exe_name) {
-  std::cout << "\nusage:  " << exe_name << "\n"
-            << "\t-c, --count <int>              - number of insertions\n"
-            << "\t-r, --range <int>              - range of sketch transform\n"
-            << "\t-R, --replication <int>        - number of tiled sketch "
-               "transforms\n"
-            << "\t-d, --domain <int>             - domain of sketch transform\n"
-            << "\t-b, --observation_count <int>  - number of sketches to test\n"
-            << "\t-s, --seed <int>               - random seed\n"
-            << "\t-v, --verbose                  - print additional debug "
-               "information.\n"
-            << "\t-h, --help                     - print this line and exit\n"
-            << std::endl;
+  std::cout
+      << "\nusage:  " << exe_name << "\n"
+      << "\t-c, --count <int>              - number of insertions\n"
+      << "\t-r, --range <int>              - range of sketch transform\n"
+      << "\t-R, --replication <int>        - number of tiled sketch "
+         "transforms\n"
+      << "\t-i, --int-range <int>          - range of (internal) sketch "
+         "transform\n"
+      << "\t-I, --int-replication <int>    - number of (internal) tiled sketch "
+         "transforms\n"
+      << "\t-d, --domain <int>             - domain of sketch transform\n"
+      << "\t-b, --observation_count <int>  - number of sketches to test\n"
+      << "\t-s, --seed <int>               - random seed\n"
+      << "\t-v, --verbose                  - print additional debug "
+         "information.\n"
+      << "\t-h, --help                     - print this line and exit\n"
+      << std::endl;
 }
 
 void parse_args(int argc, char **argv, Parameters &params) {
@@ -959,6 +964,8 @@ void parse_args(int argc, char **argv, Parameters &params) {
         {"count", required_argument, NULL, 'c'},
         {"range", required_argument, NULL, 'r'},
         {"replication", required_argument, NULL, 'R'},
+        {"int-range", required_argument, NULL, 'i'},
+        {"int-replication", required_argument, NULL, 'I'},
         {"domain", required_argument, NULL, 'd'},
         {"observation-count", required_argument, NULL, 'b'},
         {"seed", required_argument, NULL, 's'},
@@ -967,7 +974,7 @@ void parse_args(int argc, char **argv, Parameters &params) {
         {NULL, 0, NULL, 0}};
 
     int curind = optind;
-    c          = getopt_long(argc, argv, "-:c:r:R:d:b:s:vh", long_options,
+    c          = getopt_long(argc, argv, "-:c:r:R:i:I:d:b:s:vh", long_options,
                              &option_index);
     if (c == -1) {
       break;
@@ -996,6 +1003,12 @@ void parse_args(int argc, char **argv, Parameters &params) {
         break;
       case 'R':
         params.replication_count = std::atoll(optarg);
+        break;
+      case 'i':
+        params.internal_range_size = std::atoll(optarg);
+        break;
+      case 'I':
+        params.internal_replication_count = std::atoll(optarg);
         break;
       case 'd':
         params.domain_size = std::atoll(optarg);
@@ -1028,30 +1041,46 @@ void parse_args(int argc, char **argv, Parameters &params) {
   }
 }
 
-template <std::size_t RangeSize, std::size_t ReplicationCount>
+template <std::size_t InternalRangeSize, std::size_t InternalReplicationCount,
+          std::size_t FinalRangeSize, std::size_t FinalReplicationCount>
 struct do_all_tests {
   void operator()(const Parameters &params) {
-    perform_tests<matrix::DoubleSparseJLT<RangeSize, ReplicationCount>,
-                  make_ptr_functor>(params);
+    perform_tests<
+        matrix::DoubleSparseJLT<FinalRangeSize, FinalReplicationCount>,
+        make_ptr_functor>(params);
+    do_test<power_iteration_check<
+        matrix::DoubleSparseJLT<InternalRangeSize, InternalReplicationCount>,
+        matrix::DoubleSparseJLT<InternalRangeSize, InternalReplicationCount,
+                                FinalRangeSize, FinalReplicationCount>,
+        make_ptr_functor>>(params);
   }
 };
 
 int main(int argc, char **argv) {
   uint64_t      count(1000);
-  std::uint64_t range_size(32);
-  std::uint64_t replication_count(4);
-  std::uint64_t domain_size(4096);
-  std::uint64_t observation_count(16);
+  std::size_t   range_size(32);
+  std::size_t   replication_count(4);
+  std::size_t   internal_range_size(128);
+  std::size_t   internal_replication_count(4);
+  std::size_t   domain_size(4096);
+  std::size_t   observation_count(16);
   std::uint64_t seed(krowkee::hash::default_seed);
   bool          verbose(false);
 
-  Parameters params{count,       range_size,        replication_count,
-                    domain_size, observation_count, seed,
+  Parameters params{count,
+                    range_size,
+                    replication_count,
+                    internal_range_size,
+                    internal_replication_count,
+                    domain_size,
+                    observation_count,
+                    seed,
                     verbose};
 
   parse_args(argc, argv, params);
 
-  krowkee::dispatch<do_all_tests, void>{params.range_size,
-                                        params.replication_count}(params);
+  krowkee::dispatch_rectangular<do_all_tests, void>{
+      params.internal_range_size, params.internal_replication_count,
+      params.range_size, params.replication_count}(params);
   return 0;
 }
