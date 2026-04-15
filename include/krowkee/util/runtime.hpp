@@ -73,6 +73,114 @@ ReturnType dispatch_with_sketch_sizes(const std::size_t &range_size,
   }
 }
 
+template <template <std::size_t, std::size_t> class Func, typename ReturnType,
+          typename... Args>
+[[deprecated(
+    "Will be removed in v0.4. Use krowkee::dispatch instead.")]] ReturnType
+dispatch_with_sketch_sizes(const std::size_t &range_size,
+                           const std::size_t &replication_count,
+                           Args &...args) {
+  switch (range_size) {
+    case 4:
+      switch (replication_count) {
+        case 1:
+          return Func<4, 1>{}(args...);
+          break;
+        case 2:
+          return Func<4, 2>{}(args...);
+          break;
+        case 4:
+          return Func<4, 4>{}(args...);
+          break;
+        case 8:
+          return Func<4, 8>{}(args...);
+          break;
+        default:
+          throw std::logic_error(
+              "dispatch_with_sketch_sizes() convenience function only accepts "
+              "power-of-2 replication count from 1-8. Hard-code or create a "
+              "new "
+              "dispatch function if you need an unsupported replication "
+              "count.");
+      }
+      break;
+    case 8:
+      switch (replication_count) {
+        case 1:
+          return Func<8, 1>{}(args...);
+          break;
+        case 2:
+          return Func<8, 2>{}(args...);
+          break;
+        case 4:
+          return Func<8, 4>{}(args...);
+          break;
+        case 8:
+          return Func<8, 8>{}(args...);
+          break;
+        default:
+          throw std::logic_error(
+              "dispatch_with_sketch_sizes() convenience function only accepts "
+              "power-of-2 replication count from 1-8. Hard-code or create a "
+              "new "
+              "dispatch function if you need an unsupported replication "
+              "count.");
+      }
+      break;
+    case 16:
+      switch (replication_count) {
+        case 1:
+          return Func<16, 1>{}(args...);
+          break;
+        case 2:
+          return Func<16, 2>{}(args...);
+          break;
+        case 4:
+          return Func<16, 4>{}(args...);
+          break;
+        case 8:
+          return Func<16, 8>{}(args...);
+          break;
+        default:
+          throw std::logic_error(
+              "dispatch_with_sketch_sizes() convenience function only accepts "
+              "power-of-2 replication count from 1-8. Hard-code or create a "
+              "new "
+              "dispatch function if you need an unsupported replication "
+              "count.");
+      }
+      break;
+    case 32:
+      switch (replication_count) {
+        case 1:
+          return Func<32, 1>{}(args...);
+          break;
+        case 2:
+          return Func<32, 2>{}(args...);
+          break;
+        case 4:
+          return Func<32, 4>{}(args...);
+          break;
+        case 8:
+          return Func<32, 8>{}(args...);
+          break;
+        default:
+          throw std::logic_error(
+              "dispatch_with_sketch_sizes() convenience function only accepts "
+              "power-of-2 replication count from 1-8. Hard-code or create a "
+              "new "
+              "dispatch function if you need an unsupported replication "
+              "count.");
+      }
+      break;
+    default:
+      throw std::logic_error(
+          "dispatch_with_sketch_sizes() convenience function only accepts "
+          "power-of-2 range size from 4-32. Hard-code or create a new dispatch "
+          "function if you need an unsupported range size.");
+  }
+}
+
 #define DISPATCH_LEVEL0_CASE(SIZE0, FN, ...) \
   case SIZE0:                                \
     _sizes.pop_back();                       \
