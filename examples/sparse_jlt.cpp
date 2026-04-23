@@ -24,6 +24,11 @@ double l2_distance_sq(const std::vector<T> &lhs, const std::vector<T> &rhs) {
   return dist_sq;
 }
 
+double l2_distance_sq(const Eigen::VectorXf &lhs, const Eigen::VectorXf &rhs) {
+  assert(lhs.size() == rhs.size());
+  return (lhs - rhs).squaredNorm();
+}
+
 int main(int argc, char **argv) {
   uint64_t      stream_size(20000);
   std::uint64_t domain_size(16384);
@@ -94,6 +99,7 @@ int main(int argc, char **argv) {
   using sketch_type =
       krowkee::sketch::SparseJLT<register_type, range_size, replication_count,
                                  std::shared_ptr>;
+  using registers_type = typename sketch_type::registers_type;
 
   // Most krowkee classes support `name()` and `full_name()` static functions
   // that print their implementation details specified by template choices.
@@ -146,7 +152,7 @@ int main(int argc, char **argv) {
   // if the sketches receive further updates. As the sketch dimensionality is
   // assumed to be low, this is likely not a large computational problem. It
   // does, however, add a step to any implementation.
-  std::vector<std::vector<register_type>> embeddings;
+  std::vector<registers_type> embeddings;
   for (int i(0); i < observation_count; ++i) {
     embeddings.push_back(sketches[i].scaled_registers());
   }
@@ -156,11 +162,7 @@ int main(int argc, char **argv) {
                "sketch using the (inverse) scaling factor "
             << transform_type::scaling_factor << ":" << std::endl;
   for (int i(0); i < observation_count; ++i) {
-    std::cout << "(" << i << ")\t";
-    for (int j(0); j < range_size * replication_count; ++j) {
-      std::cout << " " << embeddings[i][j];
-    }
-    std::cout << std::endl;
+    std::cout << "(" << i << ")\t" << embeddings[i] << std::endl;
   }
 
   // ---------------------------------------------------------------------------

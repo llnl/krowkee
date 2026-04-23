@@ -142,6 +142,7 @@ struct init_check {
 template <typename SketchType, template <typename> class MakePtrFunc>
 struct ingest_check {
   using sketch_type        = SketchType;
+  using registers_type     = typename sketch_type::registers_type;
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
   using make_ptr_type      = MakePtrFunc<transform_type>;
@@ -178,6 +179,12 @@ struct ingest_check {
       dist_sq += std::pow(lhs[i] - rhs[i], 2);
     }
     return dist_sq;
+  }
+
+  double _l2_distance_sq(const registers_type &lhs,
+                         const registers_type &rhs) const {
+    assert(lhs.size() == rhs.size());
+    return (lhs - rhs).squaredNorm();
   }
 
   void rel_mag_test(const transform_ptr_type &transform_ptr,
@@ -219,6 +226,15 @@ struct ingest_check {
     }
   }
 
+  void print_mat(std::vector<registers_type> &projections,
+                 const int                    nrows) const {
+    std::cout << std::endl;
+    std::cout << "projections:" << std::endl;
+    for (int i(0); i < nrows; ++i) {
+      std::cout << "(" << i << ")\t" << projections[i] << std::endl;
+    }
+  }
+
   std::vector<std::vector<register_type>> fill_observation_vector(
       const std::vector<std::vector<std::uint64_t>> &inserts,
       const Parameters                              &params) const {
@@ -248,10 +264,10 @@ struct ingest_check {
     return sketches;
   }
 
-  std::vector<std::vector<register_type>> fill_projection_vector(
+  std::vector<registers_type> fill_projection_vector(
       const std::vector<sketch_type> &sketches,
       const Parameters               &params) const {
-    std::vector<std::vector<register_type>> projections;
+    std::vector<registers_type> projections;
     for (int i(0); i < params.observation_count; ++i) {
       projections.push_back(sketches[i].scaled_registers());
     }
@@ -260,8 +276,6 @@ struct ingest_check {
 
   void lemma_check(const transform_ptr_type &transform_ptr,
                    const Parameters         &params) const {
-    sketch_type sketch(transform_ptr);
-
     std::vector<std::vector<std::uint64_t>> inserts =
         get_uniform_inserts(params);
 
@@ -271,7 +285,7 @@ struct ingest_check {
     std::vector<sketch_type> sketches =
         fill_sketch_vector(transform_ptr, inserts, params);
 
-    std::vector<std::vector<register_type>> projections =
+    std::vector<registers_type> projections =
         fill_projection_vector(sketches, params);
 
     double expected_epsilon =
@@ -283,8 +297,7 @@ struct ingest_check {
       print_mat("observations", observations, params.observation_count,
                 params.domain_size);
       print_mat(sketches, params.observation_count);
-      print_mat("projections", projections, params.observation_count,
-                params.range_size * params.replication_count);
+      print_mat(projections, params.observation_count);
       std::cout << std::endl;
       std::cout << "projected vectors:" << std::endl;
     }

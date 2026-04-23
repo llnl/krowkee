@@ -41,6 +41,7 @@ int main(int argc, char **argv) {
     using sketch_type =
         krowkee::sketch::SparseJLT<register_type, range_size, replication_count,
                                    ygm::ygm_ptr>;
+    using registers_type = typename sketch_type::registers_type;
 
     // Having established a sketch type, the first step to use a krowkee sketch
     // is to create a shared pointer to a transform functor. The sketch type
@@ -91,7 +92,7 @@ int main(int argc, char **argv) {
     // sketches have accumulated. This is currently required, but the sketches
     // may perform scaling on insertion in a future version, in which case this
     // step is no longer necessary.
-    ygm::container::map<int, std::vector<register_type>> embeddings(world);
+    ygm::container::map<int, registers_type> embeddings(world);
 
     sketches.for_all([&embeddings](const int idx, const sketch_type &sketch) {
       embeddings.async_insert(idx, sketch.scaled_registers());
@@ -105,12 +106,9 @@ int main(int argc, char **argv) {
         "These are the (index, register) pairs resulting from each sketch on "
         "each rank:");
     embeddings.for_all(
-        [&world](const int idx, const std::vector<register_type> &embedding) {
+        [&world](const int idx, const registers_type &embedding) {
           std::stringstream ss;
-          ss << "has embedding (index " << idx << "):";
-          for (const auto &reg : embedding) {
-            ss << " " << reg;
-          }
+          ss << "has embedding (index " << idx << "):" << embedding;
           world.cout(ss.str());
         });
   }

@@ -5,9 +5,11 @@
 
 #pragma once
 
-#if __has_include(<cereal/types/vector.hpp>)
-#include <cereal/types/vector.hpp>
+#if __has_include(<cereal/cereal.hpp>)
+#include <krowkee/cereal/eigen.hpp>
 #endif
+
+#include <krowkee/util/eigen.hpp>
 
 #include <algorithm>
 #include <sstream>
@@ -36,7 +38,7 @@ template <typename RegType, template <typename> class MergeOp, std::size_t Size>
 class Dense {
  public:
   using register_type        = RegType;
-  using registers_type       = std::vector<register_type>;
+  using registers_type       = Eigen::Vector<register_type, Eigen::Dynamic>;
   using dense_registers_type = registers_type;
   using merge_type           = MergeOp<register_type>;
   using self_type            = Dense<register_type, MergeOp, Size>;
@@ -48,7 +50,7 @@ class Dense {
   /**
    * @brief Construct a new Dense container object
    */
-  Dense() : _registers(Size) {}
+  Dense() : _registers(registers_type::Zero(Size)) {}
 
   /**
    * @brief Copy constructor.
@@ -103,15 +105,12 @@ class Dense {
   /**
    * @brief Set all registers to 0.
    */
-  void clear() { std::fill(std::begin(_registers), std::end(_registers), 0); }
+  void clear() { _registers.setZero(Size); }
 
   /**
    * @brief Check if all registers are 0.
    */
-  bool empty() const {
-    return std::all_of(std::begin(_registers), std::end(_registers),
-                       [](const auto i) { return i == 0; });
-  }
+  bool empty() const { return _registers.isZero(0); }
 
   //////////////////////////////////////////////////////////////////////////////
   // Erase
@@ -130,11 +129,7 @@ class Dense {
    * merge sketches of different types.
    * @throws std::invalid_argument if the register sizes do not match.
    */
-  constexpr void merge(const self_type &rhs) {
-    std::transform(std::begin(_registers), std::end(_registers),
-                   std::begin(rhs._registers), std::begin(_registers),
-                   merge_type());
-  }
+  constexpr void merge(const self_type &rhs) { _registers += rhs._registers; }
 
   /**
    * @brief Operator overload for convenience for embeddings without additional
@@ -199,7 +194,7 @@ class Dense {
    * `_registers[index]`.
    */
   constexpr const register_type &operator[](const std::uint64_t index) const {
-    return _registers.get(index);
+    return _registers(index);
   }
 
   /**
@@ -210,7 +205,7 @@ class Dense {
    * @return register_type& A reference to `_registers[index]`.
    */
   register_type &operator[](const std::uint64_t index) {
-    return _registers.at(index);
+    return _registers(index);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -266,11 +261,7 @@ class Dense {
    * @return const registers_type The scaled register vector.
    */
   dense_registers_type scaled_registers(const double scaling_factor) const {
-    dense_registers_type scaled_registers{_registers};
-    for (int i(0); i < scaled_registers.size(); ++i) {
-      scaled_registers[i] /= scaling_factor;
-    }
-    return scaled_registers;
+    return _registers / scaling_factor;
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -284,7 +275,7 @@ class Dense {
    * @return false At least one register disagrees.
    */
   constexpr bool same_registers(const self_type &rhs) const {
-    return _registers == rhs._registers;
+    return detail::allclose(_registers, rhs._registers);
   }
 
   /**
@@ -344,13 +335,7 @@ class Dense {
    * @return std::ostream& The new stream state.
    */
   friend std::ostream &operator<<(std::ostream &os, const self_type &sk) {
-    int idx = 0;
-    for_each(sk, [&](const auto &p) {
-      if (idx != 0) {
-        os << " ";
-      }
-      os << "(" << idx++ << "," << std::int64_t(p) << ")";
-    });
+    os << sk._registers;
     return os;
   }
 
@@ -368,7 +353,8 @@ class Dense {
    */
   template <typename RetType>
   friend RetType accumulate(const self_type &sk, const RetType init) {
-    return std::accumulate(std::cbegin(sk), std::cend(sk), init);
+    return std::accumulate(std::cbegin(sk._registers), std::cend(sk._registers),
+                           init);
   }
 
   /**
