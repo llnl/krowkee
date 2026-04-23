@@ -60,6 +60,7 @@ int main(int argc, char **argv) {
   using sketch_type =
       krowkee::sketch::SparseJLT<register_type, range_size, replication_count,
                                  std::shared_ptr>;
+  using registers_type = sketch_type::registers_type;
   using double_sketch_type =
       krowkee::sketch::DoubleSparseJLT<register_type, range_size,
                                        replication_count, std::shared_ptr>;
@@ -202,10 +203,7 @@ int main(int argc, char **argv) {
   // We dump the contents of the AS embedding to an Eigen matrix.
   Eigen::MatrixXd matrix_AS = Eigen::MatrixXd::Zero(row_count, embedding_size);
   for (int i(0); i < row_count; ++i) {
-    std::vector<register_type> embedding = row_sketches[i].scaled_registers();
-    for (int j(0); j < embedding_size; ++j) {
-      matrix_AS(i, j) = embedding[j];
-    }
+    matrix_AS(i, Eigen::all) = row_sketches[i].scaled_registers();
   }
 
   // We dump the contents of the S^tAR embeddings to Eigen matrices.

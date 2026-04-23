@@ -7,6 +7,8 @@
 
 #include <krowkee/container/compacting_map.hpp>
 
+#include <Eigen/Dense>
+
 #include <algorithm>
 #include <sstream>
 #include <vector>
@@ -41,7 +43,7 @@ class Sparse {
   using merge_type    = MergeOp<register_type>;
   using registers_type =
       krowkee::container::compacting_map<KeyType, register_type, MapType>;
-  using dense_registers_type = std::vector<register_type>;
+  using dense_registers_type = Eigen::Vector<register_type, Eigen::Dynamic>;
   using vec_iter_type        = typename registers_type::vec_iter_type;
   using vec_citer_type       = typename registers_type::vec_citer_type;
   using pair_type            = typename registers_type::pair_type;
@@ -314,10 +316,10 @@ class Sparse {
     if (is_compact() == false) {
       throw std::logic_error("Bad attempt to export uncompacted map!");
     }
-    std::vector<register_type> registers(Size);
+    dense_registers_type registers(Size);
     std::for_each(std::cbegin(_registers), std::cend(_registers),
                   [&registers](const std::pair<KeyType, register_type> &elem) {
-                    registers[elem.first] = elem.second;
+                    registers(elem.first) = elem.second;
                   });
     return registers;
   }
@@ -335,11 +337,11 @@ class Sparse {
     if (is_compact() == false) {
       throw std::logic_error("Bad attempt to export uncompacted map!");
     }
-    std::vector<register_type> scaled_registers(Size);
+    dense_registers_type scaled_registers(Size);
     std::for_each(std::cbegin(_registers), std::cend(_registers),
                   [&scaled_registers, &scaling_factor](
                       const std::pair<KeyType, register_type> &elem) {
-                    scaled_registers[elem.first] = elem.second / scaling_factor;
+                    scaled_registers(elem.first) = elem.second / scaling_factor;
                   });
     return scaled_registers;
   }

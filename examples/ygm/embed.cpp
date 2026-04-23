@@ -121,6 +121,7 @@ struct embed {
   using sketch_type =
       krowkee::sketch::SparseJLT<register_type, range_size, replication_count,
                                  std::shared_ptr>;
+  using registers_type     = sketch_type::registers_type;
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
 
@@ -128,8 +129,7 @@ struct embed {
     ygm::container::bag<std::string> path_bag =
         get_file_paths(comm, params.input_path);
 
-    ygm::container::map<std::size_t, std::vector<register_type>> embed_map(
-        comm);
+    ygm::container::map<std::size_t, registers_type> embed_map(comm);
 
     transform_ptr_type transform_ptr(
         std::make_shared<transform_type>(params.seed));
@@ -178,14 +178,10 @@ struct embed {
     }
 
     // dump sketches to file rankwise, line-by-line
-    embed_map.for_all([&ofs](const std::size_t                 index,
-                             const std::vector<register_type> &embedding) {
-      ofs << index;
-      for (const auto &feature : embedding) {
-        ofs << " " << feature;
-      }
-      ofs << "\n";
-    });
+    embed_map.for_all(
+        [&ofs](const std::size_t index, const registers_type &embedding) {
+          ofs << index << embedding << std::endl;
+        });
     comm.barrier();
 
     if (!ofs) {

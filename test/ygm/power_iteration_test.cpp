@@ -93,10 +93,8 @@ Eigen::MatrixXd serial_accumulate_AS(
 
   // We dump the contents of the AS embedding to an Eigen matrix.
   for (int i(0); i < serial_single_sketches.size(); ++i) {
-    auto embedding = serial_single_sketches[i].scaled_registers();
-    for (int j(0); j < embedding.size(); ++j) {
-      serial_matrix_AS(i, j) = embedding[j];
-    }
+    serial_matrix_AS(i, Eigen::all) =
+        serial_single_sketches[i].scaled_registers();
   }
 
   return serial_matrix_AS;
