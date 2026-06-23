@@ -80,10 +80,7 @@ int main(int argc, char **argv) {
   // We dump the contents of the AS embedding to an Eigen matrix.
   Eigen::MatrixXd matrix_AS = Eigen::MatrixXd::Zero(row_count, embedding_size);
   for (int i(0); i < row_count; ++i) {
-    std::vector<register_type> embedding = row_sketches[i].scaled_registers();
-    for (int j(0); j < embedding_size; ++j) {
-      matrix_AS(i, j) = embedding[j];
-    }
+    matrix_AS(i, Eigen::all) = row_sketches[i].scaled_registers();
   }
 
   // We compute the iterative power iteration product as A(...A(AS)...)

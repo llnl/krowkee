@@ -37,11 +37,11 @@ bool in_bounds(const double tru, const double est, const double eps) {
 int main(int argc, char **argv) {
   ygm::comm world(&argc, &argv);
   {
-    const std::size_t row_count(256);
-    const std::size_t col_count(row_count);
-    const std::size_t transform_count(4);
-    std::uint64_t     seed(4);
-    static bool       verbose(true);
+    constexpr const std::size_t row_count(256);
+    constexpr const std::size_t col_count(row_count);
+    constexpr const std::size_t transform_count(4);
+    std::uint64_t               seed(4);
+    static bool                 verbose(true);
 
     // Using krowkee requires the selection of a sketch type for both a single
     // and double-sided sketch, here encapsulated as `single_sketch_type` and
@@ -55,6 +55,13 @@ int main(int argc, char **argv) {
     //      of instances of the transform to be used, and
     //   4. a shared pointer type to be used by the shared transform object
     //      (`std::shared_ptr` for shared memory implementations).
+    // `sketch::DoubleSparseJLT` has an additional two template parameters
+    // controlling the column transform. If not provided these default to the
+    // values provided for the row transform.
+    //   5. a `std::size_t` parameter `range_size` indicating the number of
+    //      registers used by each instance of the internal column transform,
+    //   6. a `std::size_t` parameter `replication_count` indicating the number
+    //      of instances of the column transforms to be used, and
     constexpr const std::size_t range_size        = 128;
     constexpr const std::size_t replication_count = 4;
     constexpr const std::size_t embedding_size = range_size * replication_count;
@@ -65,6 +72,17 @@ int main(int argc, char **argv) {
     using double_sketch_type =
         krowkee::sketch::DoubleSparseJLT<register_type, range_size,
                                          replication_count, std::shared_ptr>;
+
+    // Here we create the type of the final two-sided transform, which, unlike
+    // `final_double_sketch_type`, is not square. This projects the final
+    // embedding down into a smaller dimension, which allows the storage of
+    // higher-precision inter-matrix sketches while producing a smaller final
+    // embedding.
+    constexpr const std::size_t final_range_size        = 8;
+    constexpr const std::size_t final_replication_count = 4;
+    using final_double_sketch_type = krowkee::sketch::DoubleSparseJLT<
+        register_type, range_size, replication_count, std::shared_ptr,
+        final_range_size, final_replication_count>;
 
     // Having established our sketch types, we must now create shared pointers
     // to all of the associated sketch transforms. Each doubled transform is
@@ -82,6 +100,16 @@ int main(int argc, char **argv) {
     using double_transform_type = typename double_sketch_type::transform_type;
     using double_transform_ptr_type =
         typename double_sketch_type::transform_ptr_type;
+    using final_double_transform_type =
+        typename final_double_sketch_type::transform_type;
+    using final_double_transform_ptr_type =
+        typename final_double_sketch_type::transform_ptr_type;
+    //  We also get the type `final_single_sketch_type` of the corresponding
+    //  final column sketch.
+    using final_single_transform_type =
+        typename final_double_transform_type::col_transform_type;
+    using final_single_transform_ptr_type =
+        typename final_double_transform_type::col_transform_ptr_type;
     // We verify that we did not make a mistake above, and both sketch types use
     // the same transform type.
     static_assert(std::is_same<
@@ -90,21 +118,50 @@ int main(int argc, char **argv) {
     static_assert(std::is_same<
                   single_transform_type,
                   typename double_transform_type::col_transform_type>::value);
+    static_assert(
+        std::is_same<
+            single_transform_type,
+            typename final_double_transform_type::row_transform_type>::value);
+    // Note that we do not try to match the final column transform, as it is
+    // allowed to have different parameters.
+    static_assert(
+        final_double_transform_type::col_transform_type::range_size() ==
+        final_range_size);
+    static_assert(
+        final_double_transform_type::col_transform_type::replication_count() ==
+        final_replication_count);
+
+    // We create these counters for convenience. Note that `transform_count` is
+    // the total number of single sketch transforms involved in computing the
+    // product, matching the exponent approximately applied to $A$. So, there
+    // are `transform_count - 1` single transforms of the inserted type and one
+    // of the final type, and `transform_count - 2` double transforms of the
+    // intermediate type and one of the final, possibly rectangular, type.
+    constexpr const std::size_t single_transform_count = transform_count - 1;
+    constexpr const std::size_t double_transform_count = transform_count - 2;
 
     // We create a vector of shared pointers for each of the individual
     // sketch transforms.
     std::vector<single_transform_ptr_type> single_transform_ptrs;
-    for (int i(0); i < transform_count; ++i) {
+    for (int i(0); i < single_transform_count; ++i) {
       single_transform_ptrs.push_back(
           std::make_shared<single_transform_type>(seed + i));
     }
     // Using these shared pointers, we now create a vector of pointers to all of
     // the two-sided sketch transforms.
     std::vector<double_transform_ptr_type> double_transform_ptrs;
-    for (int i(0); i < transform_count - 1; ++i) {
+    for (int i(0); i < double_transform_count; ++i) {
       double_transform_ptrs.push_back(std::make_shared<double_transform_type>(
           single_transform_ptrs[i], single_transform_ptrs[i + 1]));
     }
+
+    // We create pointers to the final column transform and double transform
+    // pointers.
+    final_single_transform_ptr_type final_single_transform(
+        std::make_shared<final_single_transform_type>(seed + transform_count));
+    final_double_transform_ptr_type final_double_transform(
+        std::make_shared<final_double_transform_type>(
+            single_transform_ptrs.back(), final_single_transform));
 
     // We sample a random matrix to embed. Note that this is not implemented
     // efficiently, as this is a toy example and we will compute a ground
@@ -130,6 +187,10 @@ int main(int argc, char **argv) {
       parallel_double_sketches.emplace_back(double_transform_ptr);
     }
 
+    // We also create the parallel final double-sided sketch.
+    static final_double_sketch_type parallel_final_double_sketch(
+        final_double_transform);
+
     // here we simulate streaming over `matrix_A` where each rank gets a subset
     // of the columns, even those in this example `matrix_A` is small enough
     // that it is replicated to each rank. We apply the both the single and
@@ -146,6 +207,9 @@ int main(int argc, char **argv) {
             for (double_sketch_type &double_sketch : parallel_double_sketches) {
               double_sketch.insert({row_idx, col_idx}, update);
             }
+            // insert `(row_idx, col_idx) <- update' into the final matrix
+            // sketch.
+            parallel_final_double_sketch.insert({row_idx, col_idx}, update);
           };
           single_sketches.async_visit(row_idx, insert_lambda, col_idx,
                                       matrix_A(row_idx, col_idx));
@@ -173,11 +237,24 @@ int main(int argc, char **argv) {
       parallel_double_matrices[i] /= double_transform_type::scaling_factor;
     }
 
+    // We repeat this process for the final matrix sketch.
+    const Eigen::MatrixXd &local_final_double_matrix =
+        parallel_final_double_sketch.container().registers();
+    Eigen::MatrixXd parallel_final_double_matrix = Eigen::MatrixXd::Zero(
+        local_final_double_matrix.rows(), local_final_double_matrix.cols());
+    YGM_ASSERT_MPI(MPI_Allreduce(
+        local_final_double_matrix.data(), parallel_final_double_matrix.data(),
+        local_final_double_matrix.rows() * local_final_double_matrix.cols(),
+        ygm::detail::mpi_typeof(double()), MPI_SUM, world.get_mpi_comm()));
+    world.barrier();
+    parallel_final_double_matrix /= final_double_transform_type::scaling_factor;
+
     // We compute the partial products of the two-sided matrices.
     Eigen::MatrixXd parallel_product_partial = parallel_double_matrices[0];
     for (int i(1); i < parallel_double_matrices.size(); ++i) {
       parallel_product_partial *= parallel_double_matrices[i];
     }
+    parallel_product_partial *= parallel_final_double_matrix;
 
     // We compute the parallel streaming product.
     ygm::container::map<int, Eigen::VectorXd> parallel_product_streaming(world);
@@ -207,7 +284,7 @@ int main(int argc, char **argv) {
     // We compute the serial exact power iteration product. We will check our
     // embedded results against this.
     static Eigen::MatrixXd serial_product_exact = matrix_A;
-    for (int i(0); i < parallel_double_matrices.size(); ++i) {
+    for (int i(0); i < transform_count - 1; ++i) {
       serial_product_exact *= matrix_A;
     }
 

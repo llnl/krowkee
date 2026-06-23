@@ -21,7 +21,6 @@
 #include <random>
 
 using krowkee::chirp;
-using krowkee::dispatch_with_sketch_sizes;
 using krowkee::do_test;
 using krowkee::make_shared_functor;
 using krowkee::print_line;
@@ -30,11 +29,13 @@ using krowkee::print_line;
  * Struct bundling the experiment parameters.
  */
 struct Parameters {
-  std::uint64_t count;
-  std::uint64_t range_size;
-  std::uint64_t replication_count;
-  std::uint64_t domain_size;
-  std::uint64_t observation_count;
+  std::size_t   count;
+  std::size_t   range_size;
+  std::size_t   replication_count;
+  std::size_t   internal_range_size;
+  std::size_t   internal_replication_count;
+  std::size_t   domain_size;
+  std::size_t   observation_count;
   std::uint64_t seed;
   bool          verbose;
 };
@@ -586,7 +587,8 @@ struct ingest_check {
   }
 };
 
-template <typename SketchType, template <typename> class MakePtrFunc>
+template <typename SketchType, typename FinalSketchType,
+          template <typename> class MakePtrFunc>
 struct power_iteration_check {
   using sketch_type        = SketchType;
   using transform_type     = typename sketch_type::transform_type;
@@ -599,11 +601,26 @@ struct power_iteration_check {
   using col_transform_type = typename transform_type::col_transform_type;
   using col_transform_ptr_type =
       typename transform_type::col_transform_ptr_type;
-  using make_col_ptr_type = MakePtrFunc<col_transform_type>;
+  using final_sketch_type    = FinalSketchType;
+  using final_transform_type = typename final_sketch_type::transform_type;
+  using final_transform_ptr_type =
+      typename final_sketch_type::transform_ptr_type;
+  using make_final_ptr_type = MakePtrFunc<final_transform_type>;
+  using final_col_transform_type =
+      typename final_transform_type::col_transform_type;
+  using final_col_transform_ptr_type =
+      typename final_transform_type::col_transform_ptr_type;
+  using make_final_col_ptr_type = MakePtrFunc<final_col_transform_type>;
+  using make_col_ptr_type       = MakePtrFunc<col_transform_type>;
+
+  static_assert(
+      std::is_same<col_transform_type,
+                   typename final_transform_type::row_transform_type>::value);
 
   constexpr std::string name() const {
     std::stringstream ss;
-    ss << transform_type::name() << " power_iteration";
+    ss << transform_type::name() << " * " << final_transform_type::name()
+       << " power_iteration";
     return ss.str();
   }
 
@@ -621,40 +638,52 @@ struct power_iteration_check {
 
   void power_iteration_test(const Parameters &params,
                             const int         transform_count) const {
-    make_ptr_type     _make_ptr     = make_ptr_type();
-    make_row_ptr_type _make_row_ptr = make_row_ptr_type();
+    make_ptr_type           _make_ptr           = make_ptr_type();
+    make_row_ptr_type       _make_row_ptr       = make_row_ptr_type();
+    make_final_ptr_type     _make_final_ptr     = make_final_ptr_type();
+    make_final_col_ptr_type _make_final_col_ptr = make_final_col_ptr_type();
 
     srand(4);
     const int       row_count = 256;
     const int       col_count = 256;
     Eigen::MatrixXf matrix    = Eigen::MatrixXf::Random(row_count, col_count);
 
+    const int single_transform_count = transform_count - 1;
+    const int double_transform_count = transform_count - 2;
+
     std::vector<row_transform_ptr_type> single_transform_ptrs;
-    for (int i(0); i < transform_count; ++i) {
+    for (int i(0); i < single_transform_count; ++i) {
       single_transform_ptrs.push_back(_make_row_ptr(params.seed + i));
     }
+    final_col_transform_ptr_type final_col_transform_ptr(
+        _make_final_col_ptr(params.seed + transform_count));
 
     Eigen::MatrixXf AS_matrix = sketch_cols(matrix, single_transform_ptrs[0]);
 
     std::vector<transform_ptr_type> transform_ptrs;
-    for (int i(0); i < transform_count - 1; ++i) {
+    for (int i(0); i < double_transform_count; ++i) {
       transform_ptrs.push_back(
           _make_ptr(single_transform_ptrs[i], single_transform_ptrs[i + 1]));
     }
+    final_transform_ptr_type final_transform_ptr(
+        _make_final_ptr(single_transform_ptrs.back(), final_col_transform_ptr));
 
     std::vector<sketch_type> sketches;
     for (const transform_ptr_type &transform_ptr : transform_ptrs) {
       sketches.push_back(sketch_type{transform_ptr});
     }
+    final_sketch_type final_sketch(final_transform_ptr);
 
     std::vector<Eigen::MatrixXf> STAR_matrices;
     for (sketch_type &sketch : sketches) {
       sketch_both(matrix, sketch);
       STAR_matrices.push_back(sketch.scaled_registers());
     }
+    sketch_both(matrix, final_sketch);
+    Eigen::MatrixXf final_matrix = final_sketch.scaled_registers();
 
     Eigen::MatrixXf product_exact = matrix;
-    for (int i(0); i < sketches.size(); ++i) {
+    for (int i(0); i < transform_count - 1; ++i) {
       product_exact *= matrix;
     }
 
@@ -662,6 +691,7 @@ struct power_iteration_check {
     for (const Eigen::MatrixXf &operand : STAR_matrices) {
       product_sketch *= operand;
     }
+    product_sketch *= final_matrix;
 
     double norm = matrix.squaredNorm() / std::pow(spectral_norm(matrix), 2);
 
@@ -672,7 +702,10 @@ struct power_iteration_check {
     double expected_epsilon = std::sqrt(
         16 *
         (norm + std::log(col_count * (transform_count - 1) *
-                         sketch_type::transform_type::replication_count())) /
+                         sketch_type::transform_type::row_transform_type::
+                             replication_count() *
+                         sketch_type::transform_type::col_transform_type::
+                             replication_count())) /
         params.range_size);
     int trials(0);
     for (int i(0); i < col_count; ++i) {
@@ -875,7 +908,7 @@ struct spot_check {
 };
 
 /**
- * Execute the batter of tests for the given sketch functor.
+ * Execute the battery of tests for the given sketch functor.
  */
 template <typename SketchType, template <typename> class MakePtrFunc>
 void perform_tests(const Parameters &params) {
@@ -897,26 +930,29 @@ void perform_tests(const Parameters &params) {
   do_test<bad_merge_check<sketch_type, MakePtrFunc>>(params);
   do_test<good_merge_check<sketch_type, MakePtrFunc>>(params);
   do_test<ingest_check<sketch_type, MakePtrFunc>>(params);
-  do_test<power_iteration_check<matrix::DoubleSparseJLT<128, 4>, MakePtrFunc>>(
-      params);
 #if __has_include(<cereal/cereal.hpp>)
   do_test<serialize_check<sketch_type, MakePtrFunc>>(params);
 #endif
 }
 
 void print_help(char *exe_name) {
-  std::cout << "\nusage:  " << exe_name << "\n"
-            << "\t-c, --count <int>              - number of insertions\n"
-            << "\t-r, --range <int>              - range of sketch transform\n"
-            << "\t-R, --replication <int>        - number of tiled sketch "
-               "transforms\n"
-            << "\t-d, --domain <int>             - domain of sketch transform\n"
-            << "\t-b, --observation_count <int>  - number of sketches to test\n"
-            << "\t-s, --seed <int>               - random seed\n"
-            << "\t-v, --verbose                  - print additional debug "
-               "information.\n"
-            << "\t-h, --help                     - print this line and exit\n"
-            << std::endl;
+  std::cout
+      << "\nusage:  " << exe_name << "\n"
+      << "\t-c, --count <int>              - number of insertions\n"
+      << "\t-r, --range <int>              - range of sketch transform\n"
+      << "\t-R, --replication <int>        - number of tiled sketch "
+         "transforms\n"
+      << "\t-i, --int-range <int>          - range of (internal) sketch "
+         "transform\n"
+      << "\t-I, --int-replication <int>    - number of (internal) tiled sketch "
+         "transforms\n"
+      << "\t-d, --domain <int>             - domain of sketch transform\n"
+      << "\t-b, --observation_count <int>  - number of sketches to test\n"
+      << "\t-s, --seed <int>               - random seed\n"
+      << "\t-v, --verbose                  - print additional debug "
+         "information.\n"
+      << "\t-h, --help                     - print this line and exit\n"
+      << std::endl;
 }
 
 void parse_args(int argc, char **argv, Parameters &params) {
@@ -928,6 +964,8 @@ void parse_args(int argc, char **argv, Parameters &params) {
         {"count", required_argument, NULL, 'c'},
         {"range", required_argument, NULL, 'r'},
         {"replication", required_argument, NULL, 'R'},
+        {"int-range", required_argument, NULL, 'i'},
+        {"int-replication", required_argument, NULL, 'I'},
         {"domain", required_argument, NULL, 'd'},
         {"observation-count", required_argument, NULL, 'b'},
         {"seed", required_argument, NULL, 's'},
@@ -936,7 +974,7 @@ void parse_args(int argc, char **argv, Parameters &params) {
         {NULL, 0, NULL, 0}};
 
     int curind = optind;
-    c          = getopt_long(argc, argv, "-:c:r:R:d:b:s:vh", long_options,
+    c          = getopt_long(argc, argv, "-:c:r:R:i:I:d:b:s:vh", long_options,
                              &option_index);
     if (c == -1) {
       break;
@@ -965,6 +1003,12 @@ void parse_args(int argc, char **argv, Parameters &params) {
         break;
       case 'R':
         params.replication_count = std::atoll(optarg);
+        break;
+      case 'i':
+        params.internal_range_size = std::atoll(optarg);
+        break;
+      case 'I':
+        params.internal_replication_count = std::atoll(optarg);
         break;
       case 'd':
         params.domain_size = std::atoll(optarg);
@@ -997,30 +1041,46 @@ void parse_args(int argc, char **argv, Parameters &params) {
   }
 }
 
-template <std::size_t RangeSize, std::size_t ReplicationCount>
+template <std::size_t InternalRangeSize, std::size_t InternalReplicationCount,
+          std::size_t FinalRangeSize, std::size_t FinalReplicationCount>
 struct do_all_tests {
   void operator()(const Parameters &params) {
-    perform_tests<matrix::DoubleSparseJLT<RangeSize, ReplicationCount>,
-                  make_ptr_functor>(params);
+    perform_tests<
+        matrix::DoubleSparseJLT<FinalRangeSize, FinalReplicationCount>,
+        make_ptr_functor>(params);
+    do_test<power_iteration_check<
+        matrix::DoubleSparseJLT<InternalRangeSize, InternalReplicationCount>,
+        matrix::DoubleSparseJLT<InternalRangeSize, InternalReplicationCount,
+                                FinalRangeSize, FinalReplicationCount>,
+        make_ptr_functor>>(params);
   }
 };
 
 int main(int argc, char **argv) {
   uint64_t      count(1000);
-  std::uint64_t range_size(32);
-  std::uint64_t replication_count(4);
-  std::uint64_t domain_size(4096);
-  std::uint64_t observation_count(16);
+  std::size_t   range_size(32);
+  std::size_t   replication_count(4);
+  std::size_t   internal_range_size(128);
+  std::size_t   internal_replication_count(4);
+  std::size_t   domain_size(4096);
+  std::size_t   observation_count(16);
   std::uint64_t seed(krowkee::hash::default_seed);
   bool          verbose(false);
 
-  Parameters params{count,       range_size,        replication_count,
-                    domain_size, observation_count, seed,
+  Parameters params{count,
+                    range_size,
+                    replication_count,
+                    internal_range_size,
+                    internal_replication_count,
+                    domain_size,
+                    observation_count,
+                    seed,
                     verbose};
 
   parse_args(argc, argv, params);
 
-  dispatch_with_sketch_sizes<do_all_tests, void>(
-      params.range_size, params.replication_count, params);
+  krowkee::dispatch_rectangular<do_all_tests, void>{
+      params.internal_range_size, params.internal_replication_count,
+      params.range_size, params.replication_count}(params);
   return 0;
 }

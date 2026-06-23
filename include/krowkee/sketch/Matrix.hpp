@@ -6,113 +6,16 @@
 #pragma once
 
 #if __has_include(<cereal/cereal.hpp>)
-#include <cereal/archives/binary.hpp>
-#include <cereal/cereal.hpp>
-#include <ygm/detail/ygm_cereal_archive.hpp>
+#include <krowkee/cereal/eigen.hpp>
 #endif
 
-#include <Eigen/Dense>
+#include <krowkee/util/eigen.hpp>
 
 #include <algorithm>
 #include <sstream>
 #include <vector>
 
-#if __has_include(<cereal/cereal.hpp>)
-// Based upon
-// https://stackoverflow.com/questions/22884216/serializing-eigenmatrix-using-cereal-library
-namespace cereal {
-// cereal for Eigen::PlainObject binary archive
-template <class Archive, class Derived>
-inline typename std::enable_if<
-    traits::is_output_serializable<BinaryData<typename Derived::Scalar>,
-                                   Archive>::value,
-    void>::type
-CEREAL_SAVE_FUNCTION_NAME(Archive                               &archive,
-                          Eigen::PlainObjectBase<Derived> const &array) {
-  using array_type = Eigen::PlainObjectBase<Derived>;
-  if (array_type::RowsAtCompileTime == Eigen::Dynamic) {
-    archive(array.rows());
-  }
-  if (array_type::ColsAtCompileTime == Eigen::Dynamic) {
-    archive(array.cols());
-  }
-  archive(binary_data(array.data(),
-                      array.size() * sizeof(typename Derived::Scalar)));
-}
-
-template <class Archive, class Derived>
-inline typename std::enable_if<
-    traits::is_input_serializable<BinaryData<typename Derived::Scalar>,
-                                  Archive>::value,
-    void>::type
-CEREAL_LOAD_FUNCTION_NAME(Archive                         &archive,
-                          Eigen::PlainObjectBase<Derived> &array) {
-  using array_type  = Eigen::PlainObjectBase<Derived>;
-  Eigen::Index rows = array_type::RowsAtCompileTime;
-  Eigen::Index cols = array_type::ColsAtCompileTime;
-  if (rows == Eigen::Dynamic) {
-    archive(rows);
-  }
-  if (cols == Eigen::Dynamic) {
-    archive(cols);
-  }
-  array.resize(rows, cols);
-  archive(binary_data(array.data(),
-                      static_cast<std::size_t>(
-                          rows * cols * sizeof(typename Derived::Scalar))));
-}
-}  // namespace cereal
-#endif
-
-namespace krowkee::sketch::detail {
-// Eigen-compatible implementation of numpy.allclose() derived from
-// https://stackoverflow.com/questions/15051367/how-to-compare-vectors-approximately-in-eigen
-template <typename DerivedLHS, typename DerivedRHS>
-bool allclose(
-    const Eigen::DenseBase<DerivedLHS>    &lhs,
-    const Eigen::DenseBase<DerivedRHS>    &rhs,
-    const typename DerivedLHS::RealScalar &rtol =
-        Eigen::NumTraits<typename DerivedLHS::RealScalar>::dummy_precision() *
-        10,
-    const typename DerivedLHS::RealScalar &atol =
-        Eigen::NumTraits<typename DerivedLHS::RealScalar>::epsilon() * 100) {
-  // std::cout << "atol: " << atol << std::endl;
-  // std::cout << "rtol: " << rtol << std::endl;
-  // std::cout << "mean rhs: "
-  //           << ((rtol *
-  //                lhs.derived().array().abs().max(rhs.derived().array().abs()))
-  //                   .sum() /
-  //               lhs.size())
-  //           << std::endl;
-  // std::cout << "max error: "
-  //           << (lhs.derived() - rhs.derived()).array().abs().maxCoeff()
-  //           << std::endl;
-  return ((lhs.derived() - rhs.derived()).array().abs() <=
-          (atol +
-           rtol * lhs.derived().array().abs().max(rhs.derived().array().abs())))
-      .all();
-}
-
-template <typename DerivedLHS, typename DerivedRHS>
-double mean_absolute_error(const Eigen::DenseBase<DerivedLHS> &lhs,
-                           const Eigen::DenseBase<DerivedRHS> &rhs) {
-  return (lhs.derived() - rhs.derived()).array().abs().sum() / lhs.size();
-}
-
-template <typename DerivedLHS, typename DerivedRHS>
-double max_absolute_error(const Eigen::DenseBase<DerivedLHS> &lhs,
-                          const Eigen::DenseBase<DerivedRHS> &rhs) {
-  return (lhs.derived() - rhs.derived()).cwiseAbs().maxCoeff();
-}
-
-template <typename DerivedLHS, typename DerivedRHS>
-double min_absolute_error(const Eigen::DenseBase<DerivedLHS> &lhs,
-                          const Eigen::DenseBase<DerivedRHS> &rhs) {
-  return (lhs.derived() - rhs.derived()).cwiseAbs().minCoeff();
-}
-}  // namespace krowkee::sketch::detail
-namespace krowkee {
-namespace sketch {
+namespace krowkee::sketch {
 
 /// good reference for operator declarations:
 /// https://stackoverflow.com/questions/4421706/what-are-the-basic-rules-and-idioms-for-operator-overloading
@@ -145,20 +48,13 @@ class Matrix {
   using merge_type = MergeOp<register_type>;
   using self_type  = Matrix<register_type, MergeOp, RowCount, ColCount>;
 
-  /**
-   * Currently assuming that Matrix Objects are always square, but preparing for
-   * a world where they aren't.
-   */
-  static_assert(RowCount == ColCount);
-
  protected:
   static const std::size_t Size = RowCount * ColCount;
   registers_type           _registers;
 
  public:
   /**
-   * @brief Construct a new Matrix container object. Currently assuming that
-   * Matrix objects are always square.
+   * @brief Construct a new Matrix container object.
    */
   Matrix() : _registers(registers_type::Zero(RowCount, ColCount)) {}
 
@@ -381,10 +277,9 @@ class Matrix {
   /** The size of the registers vector. */
   static constexpr std::size_t max_size() { return Size; }
 
-  /** The size of the embedding. Equal to RowCount and ColCount. Assuming that
-   * the matrix is square.
+  /** The size of the embedding. Equal to RowCount * ColCount.
    */
-  static constexpr std::size_t embedding_size() { return RowCount; }
+  static constexpr std::size_t embedding_size() { return RowCount * ColCount; }
 
   /** The number of bytes used by each register. */
   constexpr std::size_t reg_size() const { return sizeof(register_type); }
@@ -519,5 +414,4 @@ class Matrix {
   }
 };
 
-}  // namespace sketch
-}  // namespace krowkee
+}  // namespace krowkee::sketch
