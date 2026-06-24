@@ -61,7 +61,8 @@ struct init_check {
     return ss.str();
   }
 
-  void operator()(const Parameters &params) const {
+  template <typename ParametersType>
+  void operator()(const ParametersType &params) const {
     make_ptr_type _make_ptr = make_ptr_type();
     {
       transform_ptr_type transform_ptr_1(_make_ptr(0));
@@ -154,7 +155,7 @@ struct ingest_check {
   }
 
   std::vector<std::vector<std::uint64_t>> get_uniform_inserts(
-      const Parameters &params) const {
+      const auto &params) const {
     std::mt19937                                 gen(params.seed);
     std::uniform_int_distribution<std::uint64_t> dist(0,
                                                       params.domain_size - 1);
@@ -188,7 +189,7 @@ struct ingest_check {
   }
 
   void rel_mag_test(const transform_ptr_type &transform_ptr,
-                    const Parameters         &params) const {
+                    const auto               &params) const {
     sketch_type sketch(transform_ptr);
     for (std::uint64_t i(0); i < params.count; sketch.insert(i++)) {
     }
@@ -237,7 +238,7 @@ struct ingest_check {
 
   std::vector<std::vector<register_type>> fill_observation_vector(
       const std::vector<std::vector<std::uint64_t>> &inserts,
-      const Parameters                              &params) const {
+      const auto                                    &params) const {
     std::vector<std::vector<register_type>> observations(
         params.observation_count,
         std::vector<register_type>(params.domain_size));
@@ -252,7 +253,7 @@ struct ingest_check {
   std::vector<sketch_type> fill_sketch_vector(
       const transform_ptr_type                      &transform_ptr,
       const std::vector<std::vector<std::uint64_t>> &inserts,
-      const Parameters                              &params) const {
+      const auto                                    &params) const {
     std::vector<sketch_type> sketches(params.observation_count,
                                       sketch_type(transform_ptr));
     for (int i(0); i < params.observation_count; ++i) {
@@ -265,8 +266,7 @@ struct ingest_check {
   }
 
   std::vector<registers_type> fill_projection_vector(
-      const std::vector<sketch_type> &sketches,
-      const Parameters               &params) const {
+      const std::vector<sketch_type> &sketches, const auto &params) const {
     std::vector<registers_type> projections;
     for (int i(0); i < params.observation_count; ++i) {
       projections.push_back(sketches[i].scaled_registers());
@@ -275,7 +275,7 @@ struct ingest_check {
   }
 
   void lemma_check(const transform_ptr_type &transform_ptr,
-                   const Parameters         &params) const {
+                   const auto               &params) const {
     std::vector<std::vector<std::uint64_t>> inserts =
         get_uniform_inserts(params);
 
@@ -335,7 +335,7 @@ struct ingest_check {
                     ", mean empirical epsilon=", empirical_epsilon, ")");
   }
 
-  void operator()(const Parameters &params) const {
+  void operator()(const auto &params) const {
     make_ptr_type      _make_ptr{};
     transform_ptr_type transform_ptr(_make_ptr(params.seed));
     rel_mag_test(transform_ptr, params);
@@ -379,7 +379,7 @@ struct bad_merge_check {
     return ss.str();
   }
 
-  void operator()(const Parameters &params) const {
+  void operator()(const auto &params) const {
     make_ptr_type      _make_ptr = make_ptr_type();
     transform_ptr_type transform_ptr_1(_make_ptr(32));
     transform_ptr_type transform_ptr_2(_make_ptr(22));
@@ -410,7 +410,7 @@ struct good_merge_check {
     return ss.str();
   }
 
-  void operator()(const Parameters &params) const {
+  void operator()(const auto &params) const {
     make_ptr_type      _make_ptr = make_ptr_type();
     transform_ptr_type transform_ptr(_make_ptr(8));
     sketch_type        first(transform_ptr);
@@ -471,7 +471,7 @@ struct serialize_check {
     return ss.str();
   }
 
-  void operator()(const Parameters &params) const {
+  void operator()(const auto &params) const {
     make_ptr_type      _make_ptr{};
     transform_ptr_type transform_ptr(_make_ptr(params.seed));
 
@@ -505,7 +505,7 @@ struct promotion_check {
     return ss.str();
   }
 
-  void operator()(const Parameters &params) const {
+  void operator()(const auto &params) const {
     make_ptr_type      _make_ptr = make_ptr_type();
     transform_ptr_type transform_ptr(_make_ptr(params.seed));
     sketch_type        s1(transform_ptr);
