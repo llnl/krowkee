@@ -244,7 +244,7 @@ struct good_merge_check : krowkee::test::good_merge_check<SketchType> {
 
 #if __has_include(<cereal/cereal.hpp>)
 template <typename SketchType, template <typename> class MakePtrFunc>
-struct serialize_check {
+struct serialize_check : krowkee::test::serialize_check<SketchType> {
   using sketch_type        = SketchType;
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
@@ -258,12 +258,6 @@ struct serialize_check {
       typename transform_type::col_transform_ptr_type;
   using make_col_ptr_type = MakePtrFunc<col_transform_type>;
 
-  constexpr std::string name() const {
-    std::stringstream ss;
-    ss << transform_type::name() << " serialize";
-    return ss.str();
-  }
-
   void operator()(const Parameters &params) const {
     make_ptr_type     _make_ptr     = make_ptr_type();
     make_row_ptr_type _make_row_ptr = make_row_ptr_type();
@@ -274,14 +268,11 @@ struct serialize_check {
     transform_ptr_type     transform_ptr(
         _make_ptr(row_transform_ptr, col_transform_ptr));
 
-    CHECK_ALL_ARCHIVES(*transform_ptr, "sketch functor");
-
     Eigen::MatrixXf matrix = Eigen::MatrixXf::Random(128, 128);
     sketch_type     sketch(transform_ptr);
     sketch_both(matrix, sketch);
 
-    CHECK_ALL_ARCHIVES(sketch.container(), "sketch container");
-    CHECK_ALL_ARCHIVES(sketch, "whole sketch object");
+    this->run_tests(*transform_ptr, sketch);
   }
 };
 #endif

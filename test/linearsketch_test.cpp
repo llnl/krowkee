@@ -398,6 +398,26 @@ struct promotion_check : krowkee::test::promotion_check<SketchType> {
   }
 };
 
+#if __has_include(<cereal/cereal.hpp>)
+template <typename SketchType, template <typename> class MakePtrFunc>
+struct serialize_check : krowkee::test::serialize_check<SketchType> {
+  using sketch_type        = SketchType;
+  using transform_type     = typename sketch_type::transform_type;
+  using transform_ptr_type = typename sketch_type::transform_ptr_type;
+  using make_ptr_type      = MakePtrFunc<transform_type>;
+
+  void operator()(const auto &params) const {
+    make_ptr_type      _make_ptr{};
+    transform_ptr_type transform_ptr(_make_ptr(params.seed));
+
+    sketch_type sketch(transform_ptr);
+    for (std::uint64_t i(0); i < params.count; sketch.insert(i++)) {
+    }
+    this->run_tests(*transform_ptr, sketch);
+  }
+};
+#endif
+
 /**
  * Execute the battery of tests for the given sketch functor.
  */
@@ -422,7 +442,7 @@ void perform_tests(const Parameters &params) {
   do_test<bad_merge_check<sketch_type, MakePtrFunc>>(params);
   do_test<good_merge_check<sketch_type, MakePtrFunc>>(params);
 #if __has_include(<cereal/cereal.hpp>)
-  do_test<krowkee::test::serialize_check<sketch_type, MakePtrFunc>>(params);
+  do_test<serialize_check<sketch_type, MakePtrFunc>>(params);
 #endif
   // This is a really complex compile-time check indicating whether the sketch
   // being investigated is promotable.
