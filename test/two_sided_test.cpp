@@ -265,7 +265,7 @@ struct bad_merge_check : public krowkee::test::bad_merge_check<SketchType> {
  * Verify that merge (+/+=) operators work as expected.
  */
 template <typename SketchType, template <typename> class MakePtrFunc>
-struct good_merge_check {
+struct good_merge_check : krowkee::test::good_merge_check<SketchType> {
   using sketch_type        = SketchType;
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
@@ -278,12 +278,6 @@ struct good_merge_check {
   using col_transform_ptr_type =
       typename transform_type::col_transform_ptr_type;
   using make_col_ptr_type = MakePtrFunc<col_transform_type>;
-
-  constexpr std::string name() const {
-    std::stringstream ss;
-    ss << transform_type::name() << " good merges";
-    return ss.str();
-  }
 
   void operator()(const Parameters &params) const {
     make_ptr_type     _make_ptr     = make_ptr_type();
@@ -309,67 +303,7 @@ struct good_merge_check {
     sketch_both(matrix_B, sketch_B, sketch_AB, sketch_ABC);
     sketch_both(matrix_C, sketch_C, sketch_ABC);
 
-    std::size_t size = sketch_A.size();
-    {
-      sketch_type merge_AB      = (sketch_A + sketch_B);
-      bool        merge_success = merge_AB == sketch_AB;
-      if (merge_success == false) {
-        std::cout << "fails with mean absolute error "
-                  << krowkee::sketch::detail::mean_absolute_error(
-                         merge_AB.container().registers(),
-                         sketch_AB.container().registers())
-                  << std::endl;
-        if (size <= 256) {
-          std::cout << "merge_AB:" << std::endl
-                    << merge_AB << std::endl
-                    << std::endl;
-          std::cout << "sketch_AB:" << std::endl
-                    << sketch_AB << std::endl
-                    << std::endl;
-        }
-      }
-      CHECK_CONDITION(merge_success == true, "merge (+)");
-    }
-    {
-      sketch_type merge_ABC          = (sketch_A + sketch_B + sketch_C);
-      bool        multimerge_success = merge_ABC == sketch_ABC;
-      if (multimerge_success == false) {
-        std::cout << "fails with mean absolute error "
-                  << krowkee::sketch::detail::mean_absolute_error(
-                         merge_ABC.container().registers(),
-                         sketch_ABC.container().registers())
-                  << std::endl;
-        if (size <= 256) {
-          std::cout << "merge_ABC:" << std::endl
-                    << merge_ABC << std::endl
-                    << std::endl;
-          std::cout << "sketch_ABC:" << std::endl
-                    << sketch_ABC << std::endl
-                    << std::endl;
-        }
-      }
-      CHECK_CONDITION(multimerge_success == true, "multi-merge (+, +)");
-    }
-    {
-      sketch_A += sketch_B;
-      bool inplace_merge_success = sketch_A == sketch_AB;
-      if (inplace_merge_success == false) {
-        std::cout << "fails with mean absolute error "
-                  << krowkee::sketch::detail::mean_absolute_error(
-                         sketch_A.container().registers(),
-                         sketch_AB.container().registers())
-                  << std::endl;
-        if (size <= 256) {
-          std::cout << "sketch_A:" << std::endl
-                    << sketch_A << std::endl
-                    << std::endl;
-          std::cout << "sketch_AB:" << std::endl
-                    << sketch_AB << std::endl
-                    << std::endl;
-        }
-      }
-      CHECK_CONDITION(inplace_merge_success == true, "merge (+)");
-    }
+    this->run_tests(sketch_A, sketch_B, sketch_C, sketch_AB, sketch_ABC);
   }
 };
 

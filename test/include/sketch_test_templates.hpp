@@ -143,12 +143,10 @@ struct bad_merge_check {
 /**
  * Verify that merge (+/+=) operators work as expected.
  */
-template <typename SketchType, template <typename> class MakePtrFunc>
+template <typename SketchType>
 struct good_merge_check {
-  using sketch_type        = SketchType;
-  using transform_type     = typename sketch_type::transform_type;
-  using transform_ptr_type = typename sketch_type::transform_ptr_type;
-  using make_ptr_type      = MakePtrFunc<transform_type>;
+  using sketch_type    = SketchType;
+  using transform_type = typename sketch_type::transform_type;
 
   constexpr std::string name() const {
     std::stringstream ss;
@@ -156,48 +154,55 @@ struct good_merge_check {
     return ss.str();
   }
 
-  void operator()(const auto &params) const {
-    make_ptr_type      _make_ptr = make_ptr_type();
-    transform_ptr_type transform_ptr(_make_ptr(8));
-    sketch_type        first(transform_ptr);
-    sketch_type        middle(transform_ptr);
-    sketch_type        last(transform_ptr);
-    sketch_type        both(transform_ptr);
-    sketch_type        all(transform_ptr);
-    for (std::uint64_t i(0); i < 1000; ++i) {
-      first.insert(i);
-      both.insert(i);
-      all.insert(i);
+  void chirp(bool success, std::string &&lhs_name, sketch_type &lhs,
+             std::string &&rhs_name, sketch_type &rhs,
+             std::size_t &size) const {
+    if (success == false) {
+      std::cout << "fails with mean absolute error "
+                << krowkee::sketch::detail::mean_absolute_error(
+                       lhs.container().registers(), rhs.container().registers())
+                << std::endl;
+      if (size <= 256) {
+        std::cout << lhs_name << ": " << std::endl
+                  << lhs << std::endl
+                  << std::endl;
+        std::cout << rhs_name << ": " << std::endl
+                  << rhs << std::endl
+                  << std::endl;
+      }
     }
-    for (std::uint64_t i(1000); i < 2000; ++i) {
-      middle.insert(i);
-      both.insert(i);
-      all.insert(i);
-    }
-    for (std::uint64_t i(1000); i < 2000; ++i) {
-      last.insert(i);
-      all.insert(i);
-    }
-    first.compactify();
-    middle.compactify();
-    last.compactify();
-    both.compactify();
-    all.compactify();
-    sketch_type bb = first + middle;
-    bb.compactify();
+  }
+
+  void run_tests(sketch_type &sketch_A, sketch_type &sketch_B,
+                 sketch_type &sketch_C, sketch_type &sketch_AB,
+                 sketch_type &sketch_ABC) const {
+    sketch_A.compactify();
+    sketch_B.compactify();
+    sketch_C.compactify();
+    sketch_AB.compactify();
+    sketch_ABC.compactify();
+    sketch_type merge_AB = sketch_A + sketch_B;
+    merge_AB.compactify();
+
+    std::size_t size = sketch_A.size();
     {
-      bool merge_success = both == bb;
+      bool merge_success = sketch_AB == merge_AB;
+      chirp(merge_success, "merge_AB", merge_AB, "sketch_AB", sketch_AB, size);
       CHECK_CONDITION(merge_success == true, "merge (+)");
     }
     {
-      sketch_type aa = first + middle + last;
-      aa.compactify();
-      bool multimerge_success = all == aa;
+      sketch_type merge_ABC = sketch_A + sketch_B + sketch_C;
+      merge_ABC.compactify();
+      bool multimerge_success = sketch_ABC == merge_ABC;
+      chirp(multimerge_success, "merge_ABC", merge_ABC, "sketch_ABC",
+            sketch_ABC, size);
       CHECK_CONDITION(multimerge_success == true, "multi-merge (+, +)");
     }
     {
-      first += middle;
-      bool inplace_merge_success = both == first;
+      sketch_A += sketch_B;
+      bool inplace_merge_success = sketch_AB == sketch_A;
+      chirp(inplace_merge_success, "sketch_A", sketch_A, "sketch_AB", sketch_AB,
+            size);
       CHECK_CONDITION(inplace_merge_success == true, "merge (+=)");
     }
   }
