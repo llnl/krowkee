@@ -119,12 +119,10 @@ void check_throws_bad_plus(SketchType &lhs, const SketchType &rhs) {
 /**
  * Verify that merge (+/+=) operators catch bad merges.
  */
-template <typename SketchType, template <typename> class MakePtrFunc>
+template <typename SketchType>
 struct bad_merge_check {
-  using sketch_type        = SketchType;
-  using transform_type     = typename sketch_type::transform_type;
-  using transform_ptr_type = typename sketch_type::transform_ptr_type;
-  using make_ptr_type      = MakePtrFunc<transform_type>;
+  using sketch_type    = SketchType;
+  using transform_type = typename sketch_type::transform_type;
 
   constexpr std::string name() const {
     std::stringstream ss;
@@ -132,18 +130,13 @@ struct bad_merge_check {
     return ss.str();
   }
 
-  void operator()(const auto &params) const {
-    make_ptr_type      _make_ptr = make_ptr_type();
-    transform_ptr_type transform_ptr_1(_make_ptr(32));
-    transform_ptr_type transform_ptr_2(_make_ptr(22));
-    sketch_type        sketch_1(transform_ptr_1);
-    sketch_type        sketch_2(transform_ptr_2);
+  void run_tests(sketch_type &lhs, sketch_type &rhs) const {
     CHECK_THROWS<std::invalid_argument>(
-        check_throws_bad_plus_equals<SketchType>,
-        "bad merge (+=) with different functor seeds", sketch_1, sketch_2);
+        check_throws_bad_plus_equals<sketch_type>,
+        "bad merge (+=) with different functor seeds", lhs, rhs);
     CHECK_THROWS<std::invalid_argument>(
-        check_throws_bad_plus<SketchType>,
-        "bad merge (+) with different functor seeds", sketch_1, sketch_2);
+        check_throws_bad_plus<sketch_type>,
+        "bad merge (+) with different functor seeds", lhs, rhs);
   }
 };
 

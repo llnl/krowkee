@@ -6,6 +6,7 @@
 // Klugy, but includes need to be in this order.
 
 #include <check_archive.hpp>
+#include <sketch_test_templates.hpp>
 #include <sketch_types.hpp>
 
 #include <krowkee/hash/hash.hpp>
@@ -228,7 +229,7 @@ void check_throws_bad_plus(SketchType &lhs, const SketchType &rhs) {
  * Verify that merge (+/+=) operators catch bad merges.
  */
 template <typename SketchType, template <typename> class MakePtrFunc>
-struct bad_merge_check {
+struct bad_merge_check : public krowkee::test::bad_merge_check<SketchType> {
   using sketch_type        = SketchType;
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
@@ -242,34 +243,21 @@ struct bad_merge_check {
       typename transform_type::col_transform_ptr_type;
   using make_col_ptr_type = MakePtrFunc<col_transform_type>;
 
-  constexpr std::string name() const {
-    std::stringstream ss;
-    ss << transform_type::name() << " bad merges";
-    return ss.str();
-  }
-
   void operator()(const Parameters &params) const {
     make_ptr_type     _make_ptr     = make_ptr_type();
     make_row_ptr_type _make_row_ptr = make_row_ptr_type();
     make_col_ptr_type _make_col_ptr = make_col_ptr_type();
 
-    row_transform_ptr_type row_transform_ptr_1(_make_row_ptr(32));
-    col_transform_ptr_type col_transform_ptr_1(_make_col_ptr(1));
-    row_transform_ptr_type row_transform_ptr_2(_make_row_ptr(22));
-    col_transform_ptr_type col_transform_ptr_2(_make_col_ptr(2));
+    row_transform_ptr_type lhs_row_ptr(_make_row_ptr(32));
+    col_transform_ptr_type lhs_col_ptr(_make_col_ptr(1));
+    row_transform_ptr_type rhs_row_ptr(_make_row_ptr(22));
+    col_transform_ptr_type rhs_col_ptr(_make_col_ptr(2));
 
-    transform_ptr_type transform_ptr_1(
-        _make_ptr(row_transform_ptr_1, col_transform_ptr_1));
-    transform_ptr_type transform_ptr_2(
-        _make_ptr(row_transform_ptr_2, col_transform_ptr_2));
-    sketch_type sketch_1(transform_ptr_1);
-    sketch_type sketch_2(transform_ptr_2);
-    CHECK_THROWS<std::invalid_argument>(
-        check_throws_bad_plus_equals<SketchType>,
-        "bad merge (+=) with different functor seeds", sketch_1, sketch_2);
-    CHECK_THROWS<std::invalid_argument>(
-        check_throws_bad_plus<SketchType>,
-        "bad merge (+) with different functor seeds", sketch_1, sketch_2);
+    transform_ptr_type lhs_ptr(_make_ptr(lhs_row_ptr, rhs_col_ptr));
+    transform_ptr_type rhs_ptr(_make_ptr(rhs_row_ptr, rhs_col_ptr));
+    sketch_type        lhs(lhs_ptr);
+    sketch_type        rhs(rhs_ptr);
+    this->run_tests(lhs, rhs);
   }
 };
 
