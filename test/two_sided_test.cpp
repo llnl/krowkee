@@ -123,7 +123,7 @@ constexpr MatrixType sketch_rows(const MatrixType       &matrix,
  * Verify that initialization and assignment (=) operators work as expected.
  */
 template <typename SketchType, template <typename> class MakePtrFunc>
-struct init_check {
+struct init_check : krowkee::test::init_check<SketchType> {
   using sketch_type        = SketchType;
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
@@ -137,81 +137,26 @@ struct init_check {
       typename transform_type::col_transform_ptr_type;
   using make_col_ptr_type = MakePtrFunc<col_transform_type>;
 
-  std::string name() const {
-    std::stringstream ss;
-    ss << transform_type::name() << " constructors";
-    return ss.str();
-  }
-
   void operator()(const Parameters &params) const {
     make_ptr_type     _make_ptr     = make_ptr_type();
     make_row_ptr_type _make_row_ptr = make_row_ptr_type();
     make_col_ptr_type _make_col_ptr = make_col_ptr_type();
 
-    row_transform_ptr_type row_transform_ptr(_make_row_ptr(0));
-    col_transform_ptr_type col_transform_ptr(_make_col_ptr(1));
+    row_transform_ptr_type row_ptr(_make_row_ptr(0));
+    col_transform_ptr_type col_ptr(_make_col_ptr(1));
 
     Eigen::MatrixXf matrix = Eigen::MatrixXf::Random(16, 16);
-    {
-      transform_ptr_type transform_ptr(
-          _make_ptr(row_transform_ptr, col_transform_ptr));
-      sketch_type sketch(transform_ptr);
 
-      bool init_empty = sketch.empty();
+    transform_ptr_type lhs_ptr(_make_ptr(row_ptr, col_ptr));
+    transform_ptr_type rhs_ptr(_make_ptr(row_ptr, col_ptr));
+    sketch_type        lhs(lhs_ptr);
+    sketch_type        rhs(rhs_ptr);
+    sketch_type        empty_sketch(lhs_ptr);
+    sketch_type        not_empty_sketch(lhs_ptr);
 
-      CHECK_CONDITION(init_empty == true, "initial empty");
-
-      sketch.insert({1, 1});
-      bool not_empty = sketch.empty();
-      if (not_empty == true) {
-        std::cout << "sketch: \n" << sketch << std::endl;
-      }
-      CHECK_CONDITION(not_empty == false, "post-insert not empty");
-
-      sketch.clear();
-      bool clear_empty = sketch.empty();
-      CHECK_CONDITION(clear_empty == true, "post-clear empty");
-    }
-    {
-      transform_ptr_type transform_ptr_1(
-          _make_ptr(row_transform_ptr, col_transform_ptr));
-      transform_ptr_type transform_ptr_2(
-          _make_ptr(row_transform_ptr, col_transform_ptr));
-      sketch_type sketch_1(transform_ptr_1);
-      sketch_type sketch_2(transform_ptr_2);
-
-      sketch_both(matrix, sketch_1, sketch_2);
-
-      bool constructors_match = sketch_1 == sketch_2;
-      if (constructors_match == false) {
-        std::cout << "sketch_1:" << std::endl
-                  << sketch_1 << std::endl
-                  << std::endl;
-        std::cout << "sketch_2:" << std::endl << sketch_2 << std::endl;
-      }
-      CHECK_CONDITION(constructors_match == true,
-                      "constructor/insert consistency");
-
-      sketch_type sketch_3(sketch_1);
-      bool        copy_matches = sketch_1 == sketch_3;
-      if (copy_matches == false) {
-        std::cout << "sketch_1:" << std::endl
-                  << sketch_1 << std::endl
-                  << std::endl;
-        std::cout << "sketch_3:" << std::endl << sketch_3 << std::endl;
-      }
-      CHECK_CONDITION(copy_matches == true, "copy constructor");
-
-      sketch_type sketch_4     = sketch_1;
-      bool        swap_matches = sketch_1 == sketch_4;
-      if (swap_matches == false) {
-        std::cout << "sketch1:" << std::endl
-                  << sketch_1 << std::endl
-                  << std::endl;
-        std::cout << "sketch3:" << std::endl << sketch_4 << std::endl;
-      }
-      CHECK_CONDITION(swap_matches, "copy-and-swap assignment");
-    }
+    not_empty_sketch.insert({1, 1});
+    sketch_both(matrix, lhs, rhs);
+    this->run_tests(lhs, rhs, empty_sketch, not_empty_sketch);
   }
 };
 

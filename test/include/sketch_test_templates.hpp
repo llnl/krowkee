@@ -28,12 +28,10 @@ using krowkee::print_line;
 /**
  * Verify that initialization and assignment (=) operators work as expected.
  */
-template <typename SketchType, template <typename> class MakePtrFunc>
+template <typename SketchType>
 struct init_check {
-  using sketch_type        = SketchType;
-  using transform_type     = typename sketch_type::transform_type;
-  using transform_ptr_type = typename sketch_type::transform_ptr_type;
-  using make_ptr_type      = MakePtrFunc<transform_type>;
+  using sketch_type    = SketchType;
+  using transform_type = typename sketch_type::transform_type;
 
   std::string name() const {
     std::stringstream ss;
@@ -41,67 +39,59 @@ struct init_check {
     return ss.str();
   }
 
-  template <typename ParametersType>
-  void operator()(const ParametersType &params) const {
-    make_ptr_type _make_ptr = make_ptr_type();
+  void chirp_pair(bool success, std::string &&lhs_name, sketch_type &lhs,
+                  std::string &&rhs_name, sketch_type &rhs,
+                  std::size_t size) const {
+    if (success == false && size <= 256) {
+      std::cout << lhs_name << ": " << lhs << std::endl;
+      std::cout << rhs_name << ": " << rhs << std::endl;
+    }
+  }
+
+  void chirp(bool success, std::string &&name, sketch_type &sketch,
+             std::size_t size) const {
+    if (success == false && size <= 256) {
+      std::cout << name << ": " << sketch << std::endl;
+    }
+  }
+
+  void run_tests(sketch_type &lhs, sketch_type &rhs, sketch_type &empty_sketch,
+                 sketch_type &not_empty_sketch) const {
+    std::size_t size = lhs.size();
     {
-      transform_ptr_type transform_ptr_1(_make_ptr(0));
-      transform_ptr_type transform_ptr_2(_make_ptr(0));
-      sketch_type        sketch_1(transform_ptr_1);
-      sketch_type        sketch_2(transform_ptr_2);
-      for (int i(0); i < 1000; i++) {
-        sketch_1.insert(i);
-        sketch_2.insert(i);
-      }
-      bool constructors_match = sketch_1 == sketch_2;
-      if (constructors_match == false) {
-        std::cout << "sketch_1 : " << sketch_1 << std::endl;
-        std::cout << "sketch_2 : " << sketch_2 << std::endl;
-      }
+      bool constructors_match = lhs == rhs;
+      chirp_pair(constructors_match == true, "lhs", lhs, "rhs", rhs, size);
       CHECK_CONDITION(constructors_match == true,
                       "constructor/insert consistency");
     }
     {
-      transform_ptr_type transform_ptr(_make_ptr(0));
-      sketch_type        sketch(transform_ptr);
-      for (int i(0); i < 1000; sketch.insert(i++)) {
-      }
-      sketch_type sketch2(sketch);
-      bool        copy_matches = sketch == sketch2;
-      if (copy_matches == false) {
-        std::cout << "sketch : " << sketch << std::endl;
-        std::cout << "sketch2 : " << sketch2 << std::endl;
-      }
+      bool init_empty = empty_sketch.empty();
+      chirp(init_empty == true, "empty_sketch", empty_sketch, size);
+      CHECK_CONDITION(init_empty == true, "initial empty");
+    }
+    {
+      bool not_empty = not_empty_sketch.empty();
+      chirp(not_empty == false, "not_empty_sketch", not_empty_sketch, size);
+      CHECK_CONDITION(not_empty == false, "post-insert not empty");
+    }
+    {
+      not_empty_sketch.clear();
+      bool clear_empty = not_empty_sketch.empty();
+      chirp(clear_empty == true, "cleared_sketch", not_empty_sketch, size);
+      CHECK_CONDITION(clear_empty == true, "post-clear empty");
+    }
+
+    {
+      sketch_type copy(lhs);
+      bool        copy_matches = lhs == copy;
+      chirp_pair(copy_matches == true, "sketch", lhs, "copy", copy, size);
       CHECK_CONDITION(copy_matches == true, "copy constructor");
     }
     {
-      transform_ptr_type transform_ptr(_make_ptr(0));
-      sketch_type        sketch(transform_ptr);
-      for (int i(0); i < 1000; sketch.insert(i++)) {
-      }
-      sketch_type sketch2      = sketch;
-      bool        swap_matches = sketch == sketch2;
-      if (swap_matches == false) {
-        std::cout << "sketch : " << sketch << std::endl;
-        std::cout << "sketch2 : " << sketch2 << std::endl;
-      }
-      CHECK_CONDITION(swap_matches, "copy-and-swap assignment");
-    }
-    {
-      transform_ptr_type transform_ptr(_make_ptr(0));
-      sketch_type        sketch(transform_ptr);
-
-      bool init_empty = sketch.empty();
-
-      CHECK_CONDITION(init_empty == true, "initial empty");
-
-      sketch.insert(1);
-      bool not_empty = sketch.empty();
-      CHECK_CONDITION(not_empty == false, "post-insert not empty");
-
-      sketch.clear();
-      bool clear_empty = sketch.empty();
-      CHECK_CONDITION(clear_empty == true, "post-clear empty");
+      sketch_type swap         = lhs;
+      bool        swap_matches = lhs == swap;
+      chirp_pair(swap_matches == true, "sketch", lhs, "swap", swap, size);
+      CHECK_CONDITION(swap_matches == true, "copy-and-swap assignment");
     }
   }
 };

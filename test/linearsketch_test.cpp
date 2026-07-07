@@ -274,6 +274,31 @@ struct ingest_check {
 };
 
 template <typename SketchType, template <typename> class MakePtrFunc>
+struct init_check : krowkee::test::init_check<SketchType> {
+  using sketch_type        = SketchType;
+  using transform_type     = typename sketch_type::transform_type;
+  using transform_ptr_type = typename sketch_type::transform_ptr_type;
+  using make_ptr_type      = MakePtrFunc<transform_type>;
+
+  template <typename ParametersType>
+  void operator()(const ParametersType &params) const {
+    make_ptr_type      _make_ptr = make_ptr_type();
+    transform_ptr_type lhs_ptr(_make_ptr(0));
+    transform_ptr_type rhs_ptr(_make_ptr(0));
+    sketch_type        lhs(lhs_ptr);
+    sketch_type        rhs(rhs_ptr);
+    sketch_type        empty_sketch(lhs_ptr);
+    sketch_type        not_empty_sketch(lhs_ptr);
+    not_empty_sketch.insert(1);
+    for (int i(0); i < 1000; i++) {
+      lhs.insert(i);
+      rhs.insert(i);
+    }
+    this->run_tests(lhs, rhs, empty_sketch, not_empty_sketch);
+  }
+};
+
+template <typename SketchType, template <typename> class MakePtrFunc>
 struct bad_merge_check : public krowkee::test::bad_merge_check<SketchType> {
   using sketch_type        = SketchType;
   using transform_type     = typename sketch_type::transform_type;
@@ -345,7 +370,7 @@ void perform_tests(const Parameters &params) {
 
   std::cout << std::endl << std::endl;
 
-  do_test<krowkee::test::init_check<sketch_type, MakePtrFunc>>(params);
+  do_test<init_check<sketch_type, MakePtrFunc>>(params);
   do_test<ingest_check<sketch_type, MakePtrFunc>>(params);
   do_test<bad_merge_check<sketch_type, MakePtrFunc>>(params);
   do_test<good_merge_check<sketch_type, MakePtrFunc>>(params);
