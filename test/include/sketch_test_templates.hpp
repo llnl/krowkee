@@ -233,12 +233,10 @@ struct serialize_check {
  * Verify that promotion works as expected. Can only be compiled if
  * sketch_type::container_type is krowkee::sketch::Promotable.
  */
-template <typename SketchType, template <typename> class MakePtrFunc>
+template <typename SketchType>
 struct promotion_check {
-  using sketch_type        = SketchType;
-  using transform_type     = typename sketch_type::transform_type;
-  using transform_ptr_type = typename sketch_type::transform_ptr_type;
-  using make_ptr_type      = MakePtrFunc<transform_type>;
+  using sketch_type    = SketchType;
+  using transform_type = typename sketch_type::transform_type;
 
   constexpr std::string name() const {
     std::stringstream ss;
@@ -246,92 +244,64 @@ struct promotion_check {
     return ss.str();
   }
 
-  void operator()(const auto &params) const {
-    make_ptr_type      _make_ptr = make_ptr_type();
-    transform_ptr_type transform_ptr(_make_ptr(params.seed));
-    sketch_type        s1(transform_ptr);
-    sketch_type        s2(transform_ptr);
-    sketch_type        d1(transform_ptr);
-    sketch_type        d2(transform_ptr);
-    sketch_type        d12(transform_ptr);
-    sketch_type        dall(transform_ptr);
-    int                pt(sketch_type::container_type::promotion_threshold() /
-                          sketch_type::transform_type::replication_count());
-    for (std::uint64_t i(0); i < pt - 1; ++i) {
-      s1.insert(i);
-      d12.insert(i);
-      d1.insert(i);
-      d1.insert(i);
-      d2.insert(i);
-      dall.insert(i);
-    }
-    for (std::uint64_t i(pt); i < 2 * pt - 1; ++i) {
-      s2.insert(i);
-      d12.insert(i);
-      d1.insert(i);
-      d2.insert(i);
-      d2.insert(i);
-      dall.insert(i);
-    }
-    for (std::uint64_t i(2 * pt); i < params.count; ++i) {
-      d1.insert(i);
-      d2.insert(i);
-      dall.insert(i);
-    }
-    s1.compactify();
-    s2.compactify();
-    d1.compactify();
-    d2.compactify();
-    d12.compactify();
-    dall.compactify();
+  void run_tests(sketch_type &sparse_A, sketch_type &sparse_B,
+                 sketch_type &dense_AABC, sketch_type &dense_ABBC,
+                 sketch_type &dense_AB, sketch_type &dense_ABC) const {
+    sparse_A.compactify();
+    sparse_B.compactify();
+    dense_AABC.compactify();
+    dense_ABBC.compactify();
+    dense_AB.compactify();
+    dense_ABC.compactify();
     {
-      sketch_type d1_ = s1 + dall;
-      d1_.compactify();
-      bool sp_merge_success = d1_ == d1;
+      sketch_type dense_AABC_ = sparse_A + dense_ABC;
+      dense_AABC_.compactify();
+      bool sp_merge_success = dense_AABC_ == dense_AABC;
       CHECK_CONDITION(sp_merge_success == true, "merge (+) sparse/dense");
     }
     {
-      sketch_type d1_ = dall + s1;
-      d1_.compactify();
-      bool sp_merge_success = d1_ == d1;
+      sketch_type dense_AABC_ = dense_ABC + sparse_A;
+      dense_AABC_.compactify();
+      bool sp_merge_success = dense_AABC_ == dense_AABC;
       CHECK_CONDITION(sp_merge_success == true, "merge (+) dense/sparse");
     }
     {
-      sketch_type dall12 = dall + s1 + s2;
-      sketch_type d12_   = dall + d12;
-      dall12.compactify();
-      d12_.compactify();
-      bool sp_multimerge_success = dall12 == d12_;
+      sketch_type dense_AABBC  = dense_ABC + sparse_A + sparse_B;
+      sketch_type dense_AABBC_ = dense_ABC + dense_AB;
+      dense_AABBC.compactify();
+      dense_AABBC_.compactify();
+      bool sp_multimerge_success = dense_AABBC == dense_AABBC_;
       CHECK_CONDITION(sp_multimerge_success == true,
                       "multi-merge (+) dense/sparse/sparse");
     }
     {
-      sketch_type s11 = s1 + s1;
-      s11.compactify();
-      bool sss_merge_success =
-          accumulate(s11, 0.0) == 2 * accumulate(s1, 0.0) &&
-          s11.is_sparse() == true;
-      CHECK_CONDITION(sss_merge_success == true,
+      sketch_type sparse_AA = sparse_A + sparse_A;
+      sparse_AA.compactify();
+      bool sparse_AA_merge_success =
+          accumulate(sparse_AA, 0.0) == 2 * accumulate(sparse_A, 0.0) &&
+          sparse_AA.is_sparse() == true;
+      CHECK_CONDITION(sparse_AA_merge_success == true,
                       "merge (+) sparse/sparse (sparse)");
     }
     {
-      sketch_type s12 = s1 + s2;
-      s12.compactify();
-      bool ssd_merge_success = s12 == d12;
-      CHECK_CONDITION(ssd_merge_success == true,
+      sketch_type sparse_AB = sparse_A + sparse_B;
+      sparse_AB.compactify();
+      bool sparse_AB_merge_success =
+          sparse_AB == dense_AB && sparse_AB.is_sparse() == false;
+      CHECK_CONDITION(sparse_AB_merge_success == true,
                       "merge (+) sparse/sparse (dense)");
     }
     {
-      s1 += dall;
-      s1.compactify();
-      bool ssd_inplace_merge_success = s1 == d1;
+      sparse_A += dense_ABC;
+      sparse_A.compactify();
+      bool ssd_inplace_merge_success = sparse_A == dense_AABC;
       CHECK_CONDITION(ssd_inplace_merge_success == true,
                       "merge (+=) sparse/dense (dense)");
     }
     {
-      dall += s2;
-      dall.compactify();
-      bool dsd_inplace_merge_success = dall == d2;
+      dense_ABC += sparse_B;
+      dense_ABC.compactify();
+      bool dsd_inplace_merge_success = dense_ABC == dense_ABBC;
       CHECK_CONDITION(dsd_inplace_merge_success == true,
                       "merge (+=) dense/sparse (dense)");
     }

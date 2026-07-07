@@ -160,16 +160,6 @@ struct init_check : krowkee::test::init_check<SketchType> {
   }
 };
 
-template <typename SketchType>
-void check_throws_bad_plus_equals(SketchType &lhs, const SketchType &rhs) {
-  lhs += rhs;
-}
-
-template <typename SketchType>
-void check_throws_bad_plus(SketchType &lhs, const SketchType &rhs) {
-  SketchType sketch = lhs += rhs;
-}
-
 /**
  * Verify that merge (+/+=) operators catch bad merges.
  */

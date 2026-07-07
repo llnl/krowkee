@@ -351,6 +351,53 @@ struct good_merge_check : krowkee::test::good_merge_check<SketchType> {
   }
 };
 
+template <typename SketchType, template <typename> class MakePtrFunc>
+struct promotion_check : krowkee::test::promotion_check<SketchType> {
+  using sketch_type        = SketchType;
+  using transform_type     = typename sketch_type::transform_type;
+  using transform_ptr_type = typename sketch_type::transform_ptr_type;
+  using make_ptr_type      = MakePtrFunc<transform_type>;
+
+  void operator()(const auto &params) const {
+    make_ptr_type      _make_ptr = make_ptr_type();
+    transform_ptr_type transform_ptr(_make_ptr(params.seed));
+    sketch_type        sparse_A(transform_ptr);
+    sketch_type        sparse_B(transform_ptr);
+    sketch_type        dense_AABC(transform_ptr);
+    sketch_type        dense_ABBC(transform_ptr);
+    sketch_type        dense_AB(transform_ptr);
+    sketch_type        dense_ABC(transform_ptr);
+    int                pt(sketch_type::container_type::promotion_threshold() /
+                          sketch_type::transform_type::replication_count());
+    // accumulate stream A
+    for (std::uint64_t i(0); i < pt - 1; ++i) {
+      sparse_A.insert(i);
+      dense_AB.insert(i);
+      dense_AABC.insert(i);
+      dense_AABC.insert(i);
+      dense_ABBC.insert(i);
+      dense_ABC.insert(i);
+    }
+    // accumulate stream B
+    for (std::uint64_t i(pt); i < 2 * pt - 1; ++i) {
+      sparse_B.insert(i);
+      dense_AB.insert(i);
+      dense_AABC.insert(i);
+      dense_ABBC.insert(i);
+      dense_ABBC.insert(i);
+      dense_ABC.insert(i);
+    }
+    // accumulate stream C
+    for (std::uint64_t i(2 * pt); i < params.count; ++i) {
+      dense_AABC.insert(i);
+      dense_ABBC.insert(i);
+      dense_ABC.insert(i);
+    }
+    this->run_tests(sparse_A, sparse_B, dense_AABC, dense_ABBC, dense_AB,
+                    dense_ABC);
+  }
+};
+
 /**
  * Execute the battery of tests for the given sketch functor.
  */
@@ -392,7 +439,7 @@ void perform_tests(const Parameters &params) {
                         sketch_type::transform_type::range_size(),
                         sketch_type::transform_type::replication_count()>::
                         container_type>::value) {
-    do_test<krowkee::test::promotion_check<sketch_type, MakePtrFunc>>(params);
+    do_test<promotion_check<sketch_type, MakePtrFunc>>(params);
   }
 #endif
 }
