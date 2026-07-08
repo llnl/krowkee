@@ -19,6 +19,8 @@
 #endif
 #include <parameters.hpp>
 
+#include <random>
+
 using krowkee::chirp;
 using krowkee::do_test;
 using krowkee::make_shared_functor;
