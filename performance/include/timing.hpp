@@ -5,8 +5,6 @@
 
 #pragma once
 
-#include <parameters.hpp>
-
 #include <chrono>
 #include <memory>
 #include <vector>
@@ -30,20 +28,20 @@ struct Stopwatch {
 //// Init timing
 
 template <typename ContainerType>
-double time_container_init(const Parameters &params) {
+double time_container_init(const auto &params) {
   Stopwatch     stopwatch;
   ContainerType con(params);
   return stopwatch.elapsed();
 }
 
 template <typename SketchType>
-double time_sketch_init(const Parameters &params) {
+double time_sketch_init(const auto &params) {
   using sketch_type        = SketchType;
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = std::shared_ptr<transform_type>;
 
   transform_ptr_type transform_ptr =
-      std::make_shared<transform_type>(params.seed);
+      std::make_shared<transform_type>(params.seed());
 
   Stopwatch   stopwatch;
   sketch_type sketch(transform_ptr, params);
@@ -52,13 +50,12 @@ double time_sketch_init(const Parameters &params) {
 
 template <typename ContainerType, typename... ContainerTypes>
 void profile_container_init(
-    std::vector<std::pair<std::string, double>> &profiles,
-    const Parameters                            &params) {
+    std::vector<std::pair<std::string, double>> &profiles, const auto &params) {
   double init_time = 0.0;
-  for (std::size_t i(0); i < params.iterations; ++i) {
+  for (std::size_t i(0); i < params.iterations(); ++i) {
     init_time += time_container_init<ContainerType>(params);
   }
-  init_time /= params.iterations;
+  init_time /= params.iterations();
   profiles.push_back({ContainerType::name(), init_time});
   if constexpr (sizeof...(ContainerTypes) > 0) {
     profile_container_init<ContainerTypes...>(profiles, params);
@@ -68,7 +65,7 @@ void profile_container_init(
 
 template <typename... ContainerTypes>
 std::vector<std::pair<std::string, double>> profile_container_init(
-    const Parameters &params) {
+    const auto &params) {
   std::vector<std::pair<std::string, double>> profiles;
   if constexpr (sizeof...(ContainerTypes) > 0) {
     profile_container_init<ContainerTypes...>(profiles, params);
@@ -78,12 +75,12 @@ std::vector<std::pair<std::string, double>> profile_container_init(
 
 template <typename SketchType, typename... SketchTypes>
 void profile_sketch_init(std::vector<std::pair<std::string, double>> &profiles,
-                         const Parameters                            &params) {
+                         const auto                                  &params) {
   double init_time = 0.0;
-  for (std::size_t i(0); i < params.iterations; ++i) {
+  for (std::size_t i(0); i < params.iterations(); ++i) {
     init_time += time_sketch_init<SketchType>(params);
   }
-  init_time /= params.iterations;
+  init_time /= params.iterations();
   profiles.push_back({SketchType::full_name(), init_time});
   if constexpr (sizeof...(SketchTypes) > 0) {
     profile_sketch_init<SketchTypes...>(profiles, params);
@@ -93,7 +90,7 @@ void profile_sketch_init(std::vector<std::pair<std::string, double>> &profiles,
 
 template <typename... SketchTypes>
 std::vector<std::pair<std::string, double>> profile_sketch_init(
-    const Parameters &params) {
+    const auto &params) {
   std::vector<std::pair<std::string, double>> profiles;
   if constexpr (sizeof...(SketchTypes) > 0) {
     profile_sketch_init<SketchTypes...>(profiles, params);
@@ -113,8 +110,7 @@ double time_insert(const std::vector<SampleType> &samples, ContainerType &con) {
 }
 
 template <typename ContainerType, typename SampleType>
-double time_insert(const std::vector<SampleType> &samples,
-                   const Parameters              &params) {
+double time_insert(const std::vector<SampleType> &samples, const auto &params) {
   ContainerType con(params);
   return time_insert(samples, con);
 }
@@ -122,7 +118,7 @@ double time_insert(const std::vector<SampleType> &samples,
 template <typename SampleType, typename HistType, typename... HistTypes>
 void profile_container_histogram(
     std::vector<std::pair<std::string, double>> &profiles,
-    const std::vector<SampleType> &samples, const Parameters &params) {
+    const std::vector<SampleType> &samples, const auto &params) {
   double hist_time = time_insert<HistType>(samples, params);
   profiles.push_back({HistType::name(), hist_time});
   if constexpr (sizeof...(HistTypes) > 0) {
@@ -134,7 +130,7 @@ void profile_container_histogram(
 
 template <typename SampleType, typename... HistTypes>
 std::vector<std::pair<std::string, double>> profile_container_histogram(
-    const std::vector<SampleType> &samples, const Parameters &params) {
+    const std::vector<SampleType> &samples, const auto &params) {
   std::vector<std::pair<std::string, double>> profiles;
   if constexpr (sizeof...(HistTypes) > 0) {
     profile_container_histogram<SampleType, HistTypes...>(profiles, samples,
@@ -146,13 +142,13 @@ std::vector<std::pair<std::string, double>> profile_container_histogram(
 template <typename SampleType, typename SketchType, typename... SketchTypes>
 void profile_sketch_histogram(
     std::vector<std::pair<std::string, double>> &profiles,
-    const std::vector<SampleType> &samples, const Parameters &params) {
+    const std::vector<SampleType> &samples, const auto &params) {
   using sketch_type           = SketchType;
   using transform_type        = typename sketch_type::transform_type;
   using transform_ptr_typeype = std::shared_ptr<transform_type>;
 
   transform_ptr_typeype transform_ptr(
-      std::make_shared<transform_type>(params.seed));
+      std::make_shared<transform_type>(params.seed()));
   sketch_type sketch(transform_ptr, params);
   double      sketch_time = time_insert(samples, sketch);
   profiles.push_back({sketch_type::full_name(), sketch_time});
@@ -165,7 +161,7 @@ void profile_sketch_histogram(
 
 template <typename SampleType, typename... SketchTypes>
 std::vector<std::pair<std::string, double>> profile_sketch_histogram(
-    const std::vector<SampleType> &samples, const Parameters &params) {
+    const std::vector<SampleType> &samples, const auto &params) {
   std::vector<std::pair<std::string, double>> profiles;
   if constexpr (sizeof...(SketchTypes) > 0) {
     profile_sketch_histogram<SampleType, SketchTypes...>(profiles, samples,

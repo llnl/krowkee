@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: MIT
 
 #include <krowkee/sketch.hpp>
+#include <krowkee/util/parameters.hpp>
 #include <krowkee/util/runtime.hpp>
 
 #include <ygm/comm.hpp>
@@ -46,73 +47,6 @@ ygm::container::bag<std::string> get_file_paths(
   return result;
 }
 
-struct parameters {
-  std::string   input_path;
-  std::string   output_path;
-  std::size_t   range_size;
-  std::size_t   replication_count;
-  std::uint32_t seed;
-
-  parameters() {}
-};
-
-void usage(ygm::comm &comm) {
-  comm.cerr0()
-      << "embed usage:"
-      << "\n\t-i <str>\t- Path to input (file or directory of files)"
-      << "\n\t-o <str>\t- Path to output (will create directory if not exists)"
-      << "\n\t-r <int>\t- Power-of-2 range size"
-      << "\n\t-R <int>\t- Power-of-2 replication count"
-      << "\n\t-s <int>\t- Random seed"
-      << "\n\t-h\t\t- Print help" << std::endl;
-}
-
-parameters parse_args(int argc, char **argv, ygm::comm &comm) {
-  parameters params{};
-  int        c;
-  bool       print_help = false;
-  bool       satisfied  = false;
-
-  // Suppress error messages from getopt
-  extern int opterr;
-  opterr = 0;
-
-  while ((c = getopt(argc, argv, "i:o:r:R:s:h")) != -1) {
-    switch (c) {
-      case 'h':
-        print_help = true;
-        break;
-      case 'i':
-        params.input_path = optarg;
-        break;
-      case 'o':
-        params.output_path = optarg;
-        break;
-      case 'r':
-        params.range_size = atoll(optarg);
-        break;
-      case 'R':
-        params.replication_count = atoll(optarg);
-        break;
-      case 's':
-        params.seed = atoi(optarg);
-        break;
-      default:
-        comm.cerr0() << "Unrecognized option: " << char(optopt) << std::endl;
-        print_help = true;
-        break;
-    }
-  }
-
-  if (print_help || params.input_path == "" || params.output_path == "" ||
-      params.range_size == 0 || params.replication_count == 0) {
-    usage(comm);
-    exit(-1);
-  }
-
-  return params;
-}
-
 template <std::size_t RangeSize, std::size_t ReplicationCount>
 struct embed {
   constexpr static std::size_t range_size        = RangeSize;
@@ -125,14 +59,14 @@ struct embed {
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
 
-  void operator()(ygm::comm &comm, const parameters params) const {
+  void operator()(ygm::comm &comm, const auto params) const {
     ygm::container::bag<std::string> path_bag =
-        get_file_paths(comm, params.input_path);
+        get_file_paths(comm, params.input_path());
 
     ygm::container::map<std::size_t, registers_type> embed_map(comm);
 
     transform_ptr_type transform_ptr(
-        std::make_shared<transform_type>(params.seed));
+        std::make_shared<transform_type>(params.seed()));
 
     path_bag.for_all(
         [&comm, &transform_ptr, &embed_map](const std::string &path) {
@@ -160,17 +94,18 @@ struct embed {
 
     // Create the output path if it does not already exist.
     std::error_code ec;
-    if (!std::filesystem::exists(params.output_path, ec)) {
-      if (!std::filesystem::create_directories(params.output_path, ec) && ec) {
+    if (!std::filesystem::exists(params.output_path(), ec)) {
+      if (!std::filesystem::create_directories(params.output_path(), ec) &&
+          ec) {
         throw std::runtime_error(
-            "Failed to create directory: " + params.output_path +
+            "Failed to create directory: " + params.output_path() +
             ", error: " + ec.message());
       }
     }
 
     // create the rank-wise output file
     std::ostringstream oss;
-    oss << params.output_path << "/" << comm.rank() << ".txt";
+    oss << params.output_path() << "/" << comm.rank() << ".txt";
     const std::filesystem::path out_path(oss.str());
     std::ofstream               ofs(out_path);
     if (!ofs.is_open()) {
@@ -191,11 +126,57 @@ struct embed {
   }
 };
 
+// Here we create a simple struct to hold CLI parameters using
+// krowkee::parameters.
+struct parameters : public krowkee::parameters {
+  using base_type = krowkee::parameters;
+
+  krowkee::parameter<std::string>   input_path;
+  krowkee::parameter<std::string>   output_path;
+  krowkee::parameter<std::uint64_t> range_size;
+  krowkee::parameter<std::uint64_t> replication_count;
+  krowkee::parameter<int>           seed;
+
+  parameters()
+      : base_type(),
+        input_path("input_path", "Path to input (file or directory of files)",
+                   'i', true, ""),
+        output_path("input_path", "Path to input (file or directory of files)",
+                    'o', true, ""),
+        range_size("range_size", "Range of hash functors", 'r', true, 32),
+        replication_count("replication_count",
+                          "Number of tiled sketch transforms", 'R', true, 4),
+        seed("seed", "Random seed", 's', true, 4) {
+    _params.push_back(&input_path);
+    _params.push_back(&output_path);
+    _params.push_back(&range_size);
+    _params.push_back(&replication_count);
+    _params.push_back(&seed);
+  }
+
+  bool _help_needed() const override {
+    bool ret = base_type::_help_needed();
+    if (input_path() == "") {
+      std::cout << "Must indicate an input file or directory." << std::endl;
+      return true;
+    }
+    if (output_path() == "") {
+      std::cout << "Must indicate an output file or directory." << std::endl;
+      return true;
+    }
+    return ret;
+  }
+};
+
 int main(int argc, char **argv) {
   ygm::comm world(&argc, &argv);
   {
-    parameters params = parse_args(argc, argv, world);
-    krowkee::dispatch<embed, void>{params.range_size, params.replication_count}(
-        world, params);
+    parameters params = krowkee::parse_cmd_line<parameters>(argc, argv);
+    if (world.rank0()) {
+      std::cout << params << std::endl;
+    }
+
+    krowkee::dispatch<embed, void>{params.range_size(),
+                                   params.replication_count()}(world, params);
   }
 }
