@@ -27,5 +27,10 @@ cmap_impl_type get_cmap_impl_type(char *arg) {
     throw std::invalid_argument(ss.str());
   }
 }
+
+cmap_impl_type get_cmap_impl_type(std::string arg) {
+  return get_cmap_impl_type(arg.c_str());
+}
+
 }  // namespace util
 }  // namespace krowkee

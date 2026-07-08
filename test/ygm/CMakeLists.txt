@@ -18,6 +18,11 @@ function (add_ygm_krowkee_test test_name)
         PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
                 $<INSTALL_INTERFACE:include>
     )
+    target_include_directories(
+        ${test_exe}
+        PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
+                $<INSTALL_INTERFACE:include>
+    )
     if (${TEST_WITH_SLURM})
         add_test(${test_exe} "srun" "${CMAKE_CURRENT_BINARY_DIR}/${test_exe}")
     else ()
