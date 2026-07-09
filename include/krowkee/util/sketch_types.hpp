@@ -19,7 +19,7 @@ enum class sketch_impl_type : std::uint8_t {
   promotable_cst
 };
 
-sketch_impl_type get_sketch_impl_type(char *arg) {
+sketch_impl_type get_sketch_impl_type(const char *arg) {
   if (strcmp(arg, "cst") == 0) {
     return sketch_impl_type::cst;
   } else if (strcmp(arg, "sparse_cst") == 0) {
@@ -34,10 +34,5 @@ sketch_impl_type get_sketch_impl_type(char *arg) {
     throw std::invalid_argument(ss.str());
   }
 }
-
-sketch_impl_type get_sketch_impl_type(std::string arg) {
-  return get_sketch_impl_type(arg.c_str());
-}
-
 }  // namespace util
 }  // namespace krowkee
