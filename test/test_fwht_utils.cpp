@@ -61,19 +61,19 @@ struct run_uniform_sample_test {
   std::string name() const { return "uniform sampling"; }
 
   void operator()(const auto& params) const {
-    std::vector<uint64_t> test_vec_unif(params.sketch_size());
+    std::vector<uint64_t> test_vec_unif(params.range_size());
     std::int32_t          sum_indices    = 0;
-    int                   input_size_int = (int)params.num_vertices();
-    int                   histArray[params.num_vertices()] = {0};
+    int                   input_size_int = (int)params.domain_size();
+    int                   histArray[params.domain_size()] = {0};
     for (int i = 0; i < params.numtrials(); i++) {
       std::uint64_t new_seed = params.seed() + i;
 
       test_vec_unif = krowkee::transform::fwht::uniform_sample_vec(
-          params.num_vertices(), params.sketch_size(), params.row_index(),
+          params.domain_size(), params.range_size(), params.row_index(),
           new_seed);
 
       // std::cout << "\t" << test_vec_unif << std::endl;
-      for (int j = 0; j < params.sketch_size(); j++) {
+      for (int j = 0; j < params.range_size(); j++) {
         histArray[test_vec_unif[j]]++;
       }
     }
@@ -169,36 +169,41 @@ struct get_sketch_vector_test {
     std::vector<int32_t> test_sketch_vec =
         krowkee::transform::fwht::get_sketch_vector<int32_t>(
             params.val(), params.row_index(), params.col_index(),
-            params.num_vertices(), params.sketch_size(), params.seed());
+            params.domain_size(), params.range_size(), params.seed());
     {
-      bool size_success = test_sketch_vec.size() == params.sketch_size();
+      bool size_success = test_sketch_vec.size() == params.range_size();
       if (!size_success) {
         std::cout << "got " << test_sketch_vec.size() << " while expecting "
-                  << params.sketch_size() << std::endl;
+                  << params.range_size() << std::endl;
       }
       CHECK_CONDITION(size_success, "size");
     }
     {
-      int    sum(std::accumulate(std::begin(test_sketch_vec),
-                                 std::end(test_sketch_vec), 0.0));
-      double rel_mag((double)sum / (params.sketch_size() * params.val()));
+      // NOTE{BWP} this test is incorrect. it was intended to check if a large
+      // set of insertions produces a small relative magnitude vector, but only
+      // inserts one value. however, this same test is performed in
+      // linearsketch_test so it may not be critical to do so here.
+      // double sum(std::accumulate(std::begin(test_sketch_vec),
+      //                            std::end(test_sketch_vec), 0.0));
+      // double demonimator = params.range_size() * params.val();
+      // double rel_mag((double)sum / (params.range_size() * params.val()));
 
-      if (params.verbose()) {
-        std::cout << "Update sum, should be close to zero: "
-                  << std::accumulate(std::begin(test_sketch_vec),
-                                     std::end(test_sketch_vec), 0.0) /
-                         (params.sketch_size() * params.val())
-                  << std::endl;
-        std::cout << "The sketch: " << test_sketch_vec << std::endl;
-      }
-      CHECK_CONDITION(rel_mag < 0.1,
-                      "register sum relative magnitude near zero");
+      // if (params.verbose()) {
+      //   std::cout << "Update sum, should be close to zero: "
+      //             << std::accumulate(std::begin(test_sketch_vec),
+      //                                std::end(test_sketch_vec), 0.0) /
+      //                    (params.range_size() * params.val())
+      //             << std::endl;
+      //   std::cout << "The sketch: " << test_sketch_vec << std::endl;
+      // }
+      // CHECK_CONDITION(rel_mag < 0.1,
+      //                 "register sum relative magnitude near zero");
     }
     {
       std::vector<int32_t> second_sketch_vec =
           krowkee::transform::fwht::get_sketch_vector<int32_t>(
               params.val(), params.row_index(), params.col_index(),
-              params.num_vertices(), params.sketch_size(), params.seed());
+              params.domain_size(), params.range_size(), params.seed());
       bool agree_success = test_sketch_vec == second_sketch_vec;
       CHECK_CONDITION(agree_success, "agreement");
     }
@@ -243,8 +248,7 @@ struct orthonormality_test {
 struct parameters : public krowkee::test::hash::parameters {
   using base_type = krowkee::test::hash::parameters;
 
-  krowkee::parameter<std::uint64_t> sketch_size;
-  krowkee::parameter<std::uint64_t> num_vertices;
+  krowkee::parameter<std::uint64_t> domain_size;
   krowkee::parameter<std::uint64_t> col_index;
   krowkee::parameter<std::uint64_t> row_index;
   krowkee::parameter<std::int32_t>  val;
@@ -253,15 +257,14 @@ struct parameters : public krowkee::test::hash::parameters {
 
   parameters()
       : base_type(),
-        sketch_size("sketch_size", "Sketch_size", 'S', true, 10),
-        num_vertices("num_vertices", "Number of vertices", 'v', true, 100),
+        domain_size("domain_size", "Size of the domain of the hash function",
+                    'd', true, 128),
         col_index("col_index", "Column index to check", 'C', true, 2),
         row_index("row_index", "Row index to check", 'R', true, 10),
         val("val", "Value to check", 'a', true, 15),
         numtrials("numtrials", "Number of trials to run", 'n', true, 1000000),
         size_mat("size_mat", "Size of square matrix", 'm', true, 512) {
-    _params.push_back(&sketch_size);
-    _params.push_back(&num_vertices);
+    _params.push_back(&domain_size);
     _params.push_back(&col_index);
     _params.push_back(&row_index);
     _params.push_back(&val);
