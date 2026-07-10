@@ -6,8 +6,11 @@
 // Klugy, but includes need to be in this order.
 
 #include <krowkee/sketch.hpp>
-#include <krowkee/util/parameters.hpp>
 #include <krowkee/util/runtime.hpp>
+
+#include <getopt.h>
+#include <stdio.h>
+#include <unistd.h>
 
 #include <cstring>
 #include <iostream>
@@ -33,38 +36,64 @@ struct runtime_functor {
   }
 };
 
-// Here we create a simple struct to hold CLI parameters using
-// krowkee::parameters.
-struct parameters : public krowkee::parameters {
-  using base_type = krowkee::parameters;
+// Here we create a simple struct to hold CLI parameters.
+struct Parameters {
+  std::size_t range_size;
+  std::size_t replication_count;
 
-  krowkee::parameter<std::uint64_t> range_size;
-  krowkee::parameter<std::uint64_t> replication_count;
-
-  parameters()
-      : base_type(),
-        range_size("range", "Range of hash functors", 'r', true, 32),
-        replication_count("replication_count",
-                          "Number of tiled sketch transforms", 'R', true, 4) {
-    _params.push_back(&range_size);
-    _params.push_back(&replication_count);
-  }
+  Parameters(std::size_t range_size, std::size_t replication_count)
+      : range_size(range_size), replication_count(replication_count) {}
 };
+
+// Here is a simple parser that checks the CLI for numeric parameters
+// following
+// `-r` and `-R` and populates the parameters accordingly.
+Parameters parse_args(int argc, char **argv) {
+  Parameters params{16, 4};
+  int        c;
+
+  while (1) {
+    int                  option_index(0);
+    static struct option long_options[] = {
+        {"range_size", required_argument, NULL, 'r'},
+        {"replication_count", required_argument, NULL, 'R'},
+        {NULL, 0, NULL, 0}};
+
+    int curind = optind;
+    c          = getopt_long(argc, argv, "r:R:", long_options, &option_index);
+    if (c == -1) {
+      break;
+    }
+
+    switch (c) {
+      case 'r':
+        params.range_size = std::atoll(optarg);
+        break;
+      case 'R':
+        params.replication_count = std::atoll(optarg);
+        break;
+      default:
+        printf("?? getopt returned character code 0%o ??\n", c);
+        break;
+    }
+  }
+  return params;
+}
 
 int main(int argc, char **argv) {
   // Parse the parameters.
-  parameters params = krowkee::parse_cmd_line<parameters>(argc, argv);
+  Parameters params = parse_args(argc, argv);
 
   // This code executes the workflow with hard-coded parameters.
-  // runtime_functor<8, 2>{}();
+  runtime_functor<8, 2>{}();
 
   // To utilize the CLI parameters, use the following pattern.
   // `krowkee:dispatch` can also take additional parameters
   // and even supports returning a template type (`void` in this example). It
   // is also possible to define your own similar functions supporting
   // different options.
-  krowkee::dispatch<runtime_functor, void>{params.range_size(),
-                                           params.replication_count()}();
+  krowkee::dispatch<runtime_functor, void>{params.range_size,
+                                           params.replication_count}();
 
   return 0;
 }

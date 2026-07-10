@@ -12,7 +12,8 @@
 
 template <typename ValueType>
 struct vector_hist : public Vector<ValueType> {
-  vector_hist(const auto &params) : Vector<ValueType>(params.domain_size()) {}
+  vector_hist(const Parameters &params)
+      : Vector<ValueType>(params.domain_size) {}
 
   template <typename KeyType>
   void insert(const KeyType idx) {
@@ -23,8 +24,8 @@ struct vector_hist : public Vector<ValueType> {
 
 template <typename KeyType, typename ValueType>
 struct map_hist : Map<KeyType, ValueType> {
-  map_hist(const auto &params)
-      : Map<KeyType, ValueType>(params.domain_size()) {}
+  map_hist(const Parameters &params)
+      : Map<KeyType, ValueType>(params.domain_size) {}
 
   void insert(const KeyType idx) {
     this->check_bounds(idx);
@@ -34,7 +35,7 @@ struct map_hist : Map<KeyType, ValueType> {
 
 template <typename KeyType>
 struct set_hist : Set<KeyType> {
-  set_hist(const auto &params) : Set<KeyType>(params.domain_size()) {}
+  set_hist(const Parameters &params) : Set<KeyType>(params.domain_size) {}
 
   void insert(const KeyType idx) {
     this->check_bounds(idx);
@@ -42,7 +43,7 @@ struct set_hist : Set<KeyType> {
   }
 };
 
-void benchmark(const auto &params) {
+void benchmark(const Parameters &params) {
   using sample_type = std::uint64_t;
   std::vector<sample_type> samples(make_samples<sample_type>(params));
 
@@ -71,7 +72,7 @@ void benchmark(const auto &params) {
 }
 
 int main(int argc, char **argv) {
-  parameters params = krowkee::parse_cmd_line<parameters>(argc, argv);
+  Parameters params = parse_args(argc, argv);
 
   std::cout << params << std::endl;
 

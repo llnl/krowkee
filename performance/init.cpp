@@ -11,20 +11,22 @@
 
 template <typename ValueType>
 struct vector_init : Vector<ValueType> {
-  vector_init(const auto &params) : Vector<ValueType>(params.range_size()) {}
+  vector_init(const Parameters &params)
+      : Vector<ValueType>(params.range_size) {}
 };
 
 template <typename KeyType, typename ValueType>
 struct map_init : Map<KeyType, ValueType> {
-  map_init(const auto &params) : Map<KeyType, ValueType>(params.range_size()) {}
+  map_init(const Parameters &params)
+      : Map<KeyType, ValueType>(params.range_size) {}
 };
 
 template <typename KeyType>
 struct set_init : Set<KeyType> {
-  set_init(const auto &params) : Set<KeyType>(params.range_size()) {}
+  set_init(const Parameters &params) : Set<KeyType>(params.range_size) {}
 };
 
-void benchmark(const auto &params) {
+void benchmark(const Parameters &params) {
   using sample_type = std::uint64_t;
 #if __has_include(<boost/container/flat_map.hpp>)
   auto sk_profiles =
@@ -46,7 +48,7 @@ void benchmark(const auto &params) {
 }
 
 int main(int argc, char **argv) {
-  parameters params = krowkee::parse_cmd_line<parameters>(argc, argv);
+  Parameters params = parse_args(argc, argv);
 
   std::cout << params << std::endl;
 

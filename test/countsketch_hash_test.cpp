@@ -12,7 +12,13 @@
 #if __has_include(<cereal/cereal.hpp>)
 #include <check_archive.hpp>
 #endif
-#include <parameters.hpp>
+
+#include <getopt.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <chrono>
+#include <cstring>
+#include <iostream>
 
 using krowkee::chirp;
 using krowkee::dispatch_with_sketch_sizes;
@@ -27,6 +33,16 @@ using countsketch_hash_type =
 
 using Clock   = std::chrono::system_clock;
 using ns_type = std::chrono::nanoseconds;
+
+/**
+ * Struct bundling the experiment parameters.
+ */
+struct Parameters {
+  std::uint64_t count;
+  std::uint64_t range;
+  std::uint64_t seed;
+  bool          verbose;
+};
 
 template <typename HashType>
 void cs_init(std::uint64_t i) {
@@ -52,14 +68,14 @@ struct empirical_histograms {
   const char *name() const { return "empirical histograms"; }
 
   template <typename HashType, typename... ARGS>
-  void empirical_histogram(const auto &params, const double std_dev_range,
+  void empirical_histogram(const Parameters &params, const double std_dev_range,
                            ARGS &&...args) const {
     auto                       start = Clock::now();
-    HashType                   hash{params.seed(), args...};
+    HashType                   hash{params.seed, args...};
     std::size_t                range_size(hash.size());
     std::vector<std::uint64_t> register_hist(range_size);
     std::vector<std::int32_t>  polarity_hist(2);
-    for (std::uint64_t i(0); i < params.count(); ++i) {
+    for (std::uint64_t i(0); i < params.count; ++i) {
       auto [register_hash, polarity_hash] = hash(i);
       ++register_hist[register_hash];
       ++polarity_hist[(polarity_hash == 1) ? 1 : 0];
@@ -69,8 +85,8 @@ struct empirical_histograms {
       os.push(register_hist);
       double mean(os.mean()), var(os.variance()), std_dev(os.std_dev()),
           target(std_dev_range * mean);
-      if (params.verbose() == true) {
-        std::cout << "Empirical histogram of " << params.count()
+      if (params.verbose == true) {
+        std::cout << "Empirical histogram of " << params.count
                   << " elements hashed to " << range_size << " bins using "
                   << HashType::name() << " with state:" << std::endl;
         std::cout
@@ -98,8 +114,8 @@ struct empirical_histograms {
       os.push(polarity_hist);
       double mean(os.mean()), var(os.variance()), std_dev(os.std_dev()),
           target(std_dev_range * mean);
-      if (params.verbose() == true) {
-        std::cout << "Empirical histogram of " << params.count()
+      if (params.verbose == true) {
+        std::cout << "Empirical histogram of " << params.count
                   << " elements hashed to 2 bins using " << HashType::name()
                   << " with state:" << std::endl;
         std::cout
@@ -124,7 +140,7 @@ struct empirical_histograms {
     }
   }
 
-  void operator()(const auto &params) const {
+  void operator()(const Parameters &params) const {
     empirical_histogram<countsketch_hash_type<RangeSize>>(params, 0.01);
   }
 };
@@ -135,12 +151,12 @@ struct serialize_check {
   const char *name() { return "serialize check"; }
 
   template <typename HashType, typename... ARGS>
-  void serialize(const auto &params, ARGS &&...args) const {
-    HashType hash{params.seed(), args...};
+  void serialize(const Parameters &params, ARGS &&...args) const {
+    HashType hash{params.seed, args...};
     CHECK_ALL_ARCHIVES(hash, HashType::name());
   }
 
-  void operator()(const auto params) const {
+  void operator()(const Parameters params) const {
     serialize<countsketch_hash_type<RangeSize>>(params);
   }
 };
@@ -148,12 +164,12 @@ struct serialize_check {
 
 template <std::size_t RangeSize>
 struct do_experiment {
-  void operator()(const auto &params) {
+  void operator()(const Parameters &params) {
     print_line();
     print_line();
-    std::cout << " Experimenting with " << params.count()
-              << " insertions into a range of " << params.range_size()
-              << " using random seed " << params.seed() << std::endl;
+    std::cout << " Experimenting with " << params.count
+              << " insertions into a range of " << params.range
+              << " using random seed " << params.seed << std::endl;
     print_line();
     print_line();
     std::cout << std::endl;
@@ -166,12 +182,91 @@ struct do_experiment {
   }
 };
 
+void print_help(char *exe_name) {
+  std::cout << "\nusage:  " << exe_name << "\n"
+            << "\t-c, --count <int>  - number of insertions\n"
+            << "\t-s, --seed <int>   - random seed\n"
+            << "\t-r, --range <int>  - range of hash functors\n"
+            << "\t-v, --verbose      - print additional debug information.\n"
+            << "\t-h, --help         - print this line and exit\n"
+            << std::endl;
+}
+
+void parse_args(int argc, char **argv, Parameters &params) {
+  int c;
+
+  while (1) {
+    int                  option_index(0);
+    static struct option long_options[] = {
+        {"count", required_argument, NULL, 'c'},
+        {"range", required_argument, NULL, 'r'},
+        {"seed", required_argument, NULL, 's'},
+        {"verbose", no_argument, NULL, 'v'},
+        {"help", no_argument, NULL, 'h'},
+        {NULL, 0, NULL, 0}};
+
+    int curind = optind;
+    c = getopt_long(argc, argv, "-:c:r:s:vh", long_options, &option_index);
+    if (c == -1) {
+      break;
+    }
+
+    switch (c) {
+      case 'h':
+        print_help(argv[0]);
+        exit(-1);
+        break;
+      case 0:
+        printf("long option %s", long_options[option_index].name);
+        if (optarg) {
+          printf(" with arg %s", optarg);
+        }
+        printf("\n");
+        break;
+      case 1:
+        printf("unused regular argument ignored %s\n", optarg);
+        break;
+      case 'c':
+        params.count = std::atoll(optarg);
+        break;
+      case 'r':
+        params.range = std::atoll(optarg);
+        break;
+      case 's':
+        params.seed = std::atoll(optarg);
+        break;
+      case 'v':
+        params.verbose = true;
+        break;
+      case '?':
+        if (optopt == 0) {
+          printf("Unknown long option \"%s\",", argv[curind]);
+        } else {
+          printf("Unknown option %c,", optopt);
+        }
+        printf(" consult %s --help\n", argv[0]);
+        break;
+      case ':':
+        printf("Missing argument for option -%c/--%s\n", optopt,
+               long_options[option_index].name);
+        break;
+      default:
+        printf("?? getopt returned character code 0%o ??\n", c);
+    }
+  }
+}
+
 int main(int argc, char **argv) {
-  using parameters = krowkee::test::hash::parameters;
+  std::uint64_t count(10000);
+  std::uint64_t range(16);
+  std::uint64_t seed(krowkee::hash::default_seed);
+  bool          verbose(false);
 
-  parameters params = krowkee::test::chirp_parameters<parameters>(argc, argv);
+  Parameters params{count, range, seed, verbose};
 
-  dispatch_with_sketch_sizes<do_experiment, void>(params.range_size(), params);
+  parse_args(argc, argv, params);
+
+  dispatch_with_sketch_sizes<do_experiment, void>(params.range, params);
 
   return 0;
 }

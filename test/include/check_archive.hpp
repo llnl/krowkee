@@ -2,7 +2,6 @@
 // krowkee Project Developers. See the top-level COPYRIGHT file for details.
 //
 // SPDX-License-Identifier: MIT
-#pragma once
 
 #include <krowkee/util/check.hpp>
 

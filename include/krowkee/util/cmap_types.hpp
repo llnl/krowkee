@@ -14,7 +14,7 @@ namespace krowkee {
 namespace util {
 enum class cmap_impl_type : std::uint8_t { std, boost };
 
-cmap_impl_type get_cmap_impl_type(const char *arg) {
+cmap_impl_type get_cmap_impl_type(char *arg) {
   if (strcmp(arg, "std") == 0) {
     return cmap_impl_type::std;
 #if __has_include(<boost/container/flat_map.hpp>)
