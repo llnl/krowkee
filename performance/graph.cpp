@@ -12,9 +12,10 @@
 
 template <typename ValueType>
 struct vector_vector_graph : public Vector<std::vector<ValueType>> {
-  vector_vector_graph(const Parameters &params)
+  vector_vector_graph(const auto &params)
       : Vector<std::vector<ValueType>>(
-            params.domain_size, std::vector<ValueType>(params.domain_size)) {}
+            params.domain_size(),
+            std::vector<ValueType>(params.domain_size())) {}
 
   void insert(const edge_type<ValueType> edge) {
     this->check_bounds(edge.first);
@@ -30,9 +31,9 @@ struct vector_vector_graph : public Vector<std::vector<ValueType>> {
 // key type must equal value type because of how edge_type is constructed
 template <typename ValueType>
 struct map_vector_graph : public Map<ValueType, std::vector<ValueType>> {
-  map_vector_graph(const Parameters &params)
-      : Map<ValueType, std::vector<ValueType>>(params.domain_size),
-        _default_value(params.domain_size) {}
+  map_vector_graph(const auto &params)
+      : Map<ValueType, std::vector<ValueType>>(params.domain_size()),
+        _default_value(params.domain_size()) {}
 
   void insert(const edge_type<ValueType> edge) {
     const auto [src, dst] = edge;
@@ -54,8 +55,8 @@ struct map_vector_graph : public Map<ValueType, std::vector<ValueType>> {
 // key type must equal value type because of how edge_type is constructed
 template <typename ValueType>
 struct map_set_graph : public Map<ValueType, std::set<ValueType>> {
-  map_set_graph(const Parameters &params)
-      : Map<ValueType, std::set<ValueType>>(params.domain_size) {}
+  map_set_graph(const auto &params)
+      : Map<ValueType, std::set<ValueType>>(params.domain_size()) {}
 
   void insert(const edge_type<ValueType> edge) {
     const auto [src, dst] = edge;
@@ -67,7 +68,7 @@ struct map_set_graph : public Map<ValueType, std::set<ValueType>> {
   static std::string name() { return "std::map<std::set>"; }
 };
 
-void benchmark(const Parameters &params) {
+void benchmark(const auto &params) {
   using vertex_type = std::uint64_t;
   using edge_type   = edge_type<vertex_type>;
   std::vector<edge_type> samples(make_edge_samples<vertex_type>(params));
@@ -102,7 +103,7 @@ void benchmark(const Parameters &params) {
 }
 
 int main(int argc, char **argv) {
-  Parameters params = parse_args(argc, argv);
+  parameters params = krowkee::parse_cmd_line<parameters>(argc, argv);
 
   std::cout << params << std::endl;
 

@@ -6,7 +6,6 @@
 #pragma once
 
 #include <graph.hpp>
-#include <parameters.hpp>
 
 #include <krowkee/hash/hash.hpp>
 #include <krowkee/sketch.hpp>
@@ -16,7 +15,7 @@ struct HistSketch {
   using sketch_type        = SketchType;
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
-  HistSketch(const transform_ptr_type &transform_ptr, const Parameters &params)
+  HistSketch(const transform_ptr_type &transform_ptr, const auto &params)
       : _sketch(transform_ptr) {}
 
   void insert(const ValueType &idx) { _sketch.insert(idx); }
@@ -32,10 +31,9 @@ struct VectorGraphSketch {
   using sketch_type        = SketchType;
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
-  VectorGraphSketch(const transform_ptr_type &transform_ptr,
-                    const Parameters         &params)
+  VectorGraphSketch(const transform_ptr_type &transform_ptr, const auto &params)
       : _sketch_vec() {
-    for (int i(0); i < params.domain_size; ++i) {
+    for (int i(0); i < params.domain_size(); ++i) {
       _sketch_vec.push_back(std::make_unique<sketch_type>(transform_ptr));
     }
   }
@@ -60,8 +58,7 @@ struct MapGraphSketch {
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
 
-  MapGraphSketch(const transform_ptr_type &transform_ptr,
-                 const Parameters         &params)
+  MapGraphSketch(const transform_ptr_type &transform_ptr, const auto &params)
       : _sketch_map(), _transform_ptr(transform_ptr) {}
 
   void insert(const edge_type<ValueType> &edge) {

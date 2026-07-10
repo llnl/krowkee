@@ -6,39 +6,18 @@
 // Klugy, but includes need to be in this order.
 
 #include <check_archive.hpp>
+#include <sketch_test_templates.hpp>
 #include <sketch_types.hpp>
 
 #include <krowkee/hash/hash.hpp>
 #include <krowkee/util/runtime.hpp>
 
-#include <getopt.h>
-#include <stdio.h>
-#include <unistd.h>
-
-#include <algorithm>
-#include <cstring>
-#include <iostream>
-#include <random>
+#include <parameters.hpp>
 
 using krowkee::chirp;
 using krowkee::do_test;
 using krowkee::make_shared_functor;
 using krowkee::print_line;
-
-/**
- * Struct bundling the experiment parameters.
- */
-struct Parameters {
-  std::size_t   count;
-  std::size_t   range_size;
-  std::size_t   replication_count;
-  std::size_t   internal_range_size;
-  std::size_t   internal_replication_count;
-  std::size_t   domain_size;
-  std::size_t   observation_count;
-  std::uint64_t seed;
-  bool          verbose;
-};
 
 template <typename... Sketches>
 void sketch_both(Eigen::MatrixXf matrix, Sketches &...sketches) {
@@ -122,7 +101,7 @@ constexpr MatrixType sketch_rows(const MatrixType       &matrix,
  * Verify that initialization and assignment (=) operators work as expected.
  */
 template <typename SketchType, template <typename> class MakePtrFunc>
-struct init_check {
+struct init_check : krowkee::test::init_check<SketchType> {
   using sketch_type        = SketchType;
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
@@ -136,99 +115,34 @@ struct init_check {
       typename transform_type::col_transform_ptr_type;
   using make_col_ptr_type = MakePtrFunc<col_transform_type>;
 
-  std::string name() const {
-    std::stringstream ss;
-    ss << transform_type::name() << " constructors";
-    return ss.str();
-  }
-
-  void operator()(const Parameters &params) const {
+  void operator()(const auto &params) const {
     make_ptr_type     _make_ptr     = make_ptr_type();
     make_row_ptr_type _make_row_ptr = make_row_ptr_type();
     make_col_ptr_type _make_col_ptr = make_col_ptr_type();
 
-    row_transform_ptr_type row_transform_ptr(_make_row_ptr(0));
-    col_transform_ptr_type col_transform_ptr(_make_col_ptr(1));
+    row_transform_ptr_type row_ptr(_make_row_ptr(0));
+    col_transform_ptr_type col_ptr(_make_col_ptr(1));
 
     Eigen::MatrixXf matrix = Eigen::MatrixXf::Random(16, 16);
-    {
-      transform_ptr_type transform_ptr(
-          _make_ptr(row_transform_ptr, col_transform_ptr));
-      sketch_type sketch(transform_ptr);
 
-      bool init_empty = sketch.empty();
+    transform_ptr_type lhs_ptr(_make_ptr(row_ptr, col_ptr));
+    transform_ptr_type rhs_ptr(_make_ptr(row_ptr, col_ptr));
+    sketch_type        lhs(lhs_ptr);
+    sketch_type        rhs(rhs_ptr);
+    sketch_type        empty_sketch(lhs_ptr);
+    sketch_type        not_empty_sketch(lhs_ptr);
 
-      CHECK_CONDITION(init_empty == true, "initial empty");
-
-      sketch.insert({1, 1});
-      bool not_empty = sketch.empty();
-      if (not_empty == true) {
-        std::cout << "sketch: \n" << sketch << std::endl;
-      }
-      CHECK_CONDITION(not_empty == false, "post-insert not empty");
-
-      sketch.clear();
-      bool clear_empty = sketch.empty();
-      CHECK_CONDITION(clear_empty == true, "post-clear empty");
-    }
-    {
-      transform_ptr_type transform_ptr_1(
-          _make_ptr(row_transform_ptr, col_transform_ptr));
-      transform_ptr_type transform_ptr_2(
-          _make_ptr(row_transform_ptr, col_transform_ptr));
-      sketch_type sketch_1(transform_ptr_1);
-      sketch_type sketch_2(transform_ptr_2);
-
-      sketch_both(matrix, sketch_1, sketch_2);
-
-      bool constructors_match = sketch_1 == sketch_2;
-      if (constructors_match == false) {
-        std::cout << "sketch_1:" << std::endl
-                  << sketch_1 << std::endl
-                  << std::endl;
-        std::cout << "sketch_2:" << std::endl << sketch_2 << std::endl;
-      }
-      CHECK_CONDITION(constructors_match == true,
-                      "constructor/insert consistency");
-
-      sketch_type sketch_3(sketch_1);
-      bool        copy_matches = sketch_1 == sketch_3;
-      if (copy_matches == false) {
-        std::cout << "sketch_1:" << std::endl
-                  << sketch_1 << std::endl
-                  << std::endl;
-        std::cout << "sketch_3:" << std::endl << sketch_3 << std::endl;
-      }
-      CHECK_CONDITION(copy_matches == true, "copy constructor");
-
-      sketch_type sketch_4     = sketch_1;
-      bool        swap_matches = sketch_1 == sketch_4;
-      if (swap_matches == false) {
-        std::cout << "sketch1:" << std::endl
-                  << sketch_1 << std::endl
-                  << std::endl;
-        std::cout << "sketch3:" << std::endl << sketch_4 << std::endl;
-      }
-      CHECK_CONDITION(swap_matches, "copy-and-swap assignment");
-    }
+    not_empty_sketch.insert({1, 1});
+    sketch_both(matrix, lhs, rhs);
+    this->run_tests(lhs, rhs, empty_sketch, not_empty_sketch);
   }
 };
-
-template <typename SketchType>
-void check_throws_bad_plus_equals(SketchType &lhs, const SketchType &rhs) {
-  lhs += rhs;
-}
-
-template <typename SketchType>
-void check_throws_bad_plus(SketchType &lhs, const SketchType &rhs) {
-  SketchType sketch = lhs += rhs;
-}
 
 /**
  * Verify that merge (+/+=) operators catch bad merges.
  */
 template <typename SketchType, template <typename> class MakePtrFunc>
-struct bad_merge_check {
+struct bad_merge_check : public krowkee::test::bad_merge_check<SketchType> {
   using sketch_type        = SketchType;
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
@@ -242,34 +156,21 @@ struct bad_merge_check {
       typename transform_type::col_transform_ptr_type;
   using make_col_ptr_type = MakePtrFunc<col_transform_type>;
 
-  constexpr std::string name() const {
-    std::stringstream ss;
-    ss << transform_type::name() << " bad merges";
-    return ss.str();
-  }
-
-  void operator()(const Parameters &params) const {
+  void operator()(const auto &params) const {
     make_ptr_type     _make_ptr     = make_ptr_type();
     make_row_ptr_type _make_row_ptr = make_row_ptr_type();
     make_col_ptr_type _make_col_ptr = make_col_ptr_type();
 
-    row_transform_ptr_type row_transform_ptr_1(_make_row_ptr(32));
-    col_transform_ptr_type col_transform_ptr_1(_make_col_ptr(1));
-    row_transform_ptr_type row_transform_ptr_2(_make_row_ptr(22));
-    col_transform_ptr_type col_transform_ptr_2(_make_col_ptr(2));
+    row_transform_ptr_type lhs_row_ptr(_make_row_ptr(32));
+    col_transform_ptr_type lhs_col_ptr(_make_col_ptr(1));
+    row_transform_ptr_type rhs_row_ptr(_make_row_ptr(22));
+    col_transform_ptr_type rhs_col_ptr(_make_col_ptr(2));
 
-    transform_ptr_type transform_ptr_1(
-        _make_ptr(row_transform_ptr_1, col_transform_ptr_1));
-    transform_ptr_type transform_ptr_2(
-        _make_ptr(row_transform_ptr_2, col_transform_ptr_2));
-    sketch_type sketch_1(transform_ptr_1);
-    sketch_type sketch_2(transform_ptr_2);
-    CHECK_THROWS<std::invalid_argument>(
-        check_throws_bad_plus_equals<SketchType>,
-        "bad merge (+=) with different functor seeds", sketch_1, sketch_2);
-    CHECK_THROWS<std::invalid_argument>(
-        check_throws_bad_plus<SketchType>,
-        "bad merge (+) with different functor seeds", sketch_1, sketch_2);
+    transform_ptr_type lhs_ptr(_make_ptr(lhs_row_ptr, rhs_col_ptr));
+    transform_ptr_type rhs_ptr(_make_ptr(rhs_row_ptr, rhs_col_ptr));
+    sketch_type        lhs(lhs_ptr);
+    sketch_type        rhs(rhs_ptr);
+    this->run_tests(lhs, rhs);
   }
 };
 
@@ -277,7 +178,7 @@ struct bad_merge_check {
  * Verify that merge (+/+=) operators work as expected.
  */
 template <typename SketchType, template <typename> class MakePtrFunc>
-struct good_merge_check {
+struct good_merge_check : krowkee::test::good_merge_check<SketchType> {
   using sketch_type        = SketchType;
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
@@ -291,19 +192,13 @@ struct good_merge_check {
       typename transform_type::col_transform_ptr_type;
   using make_col_ptr_type = MakePtrFunc<col_transform_type>;
 
-  constexpr std::string name() const {
-    std::stringstream ss;
-    ss << transform_type::name() << " good merges";
-    return ss.str();
-  }
-
-  void operator()(const Parameters &params) const {
+  void operator()(const auto &params) const {
     make_ptr_type     _make_ptr     = make_ptr_type();
     make_row_ptr_type _make_row_ptr = make_row_ptr_type();
     make_col_ptr_type _make_col_ptr = make_col_ptr_type();
 
-    row_transform_ptr_type row_transform_ptr(_make_row_ptr(params.seed));
-    col_transform_ptr_type col_transform_ptr(_make_col_ptr(params.seed + 1));
+    row_transform_ptr_type row_transform_ptr(_make_row_ptr(params.seed()));
+    col_transform_ptr_type col_transform_ptr(_make_col_ptr(params.seed() + 1));
     transform_ptr_type     transform_ptr(
         _make_ptr(row_transform_ptr, col_transform_ptr));
 
@@ -321,73 +216,13 @@ struct good_merge_check {
     sketch_both(matrix_B, sketch_B, sketch_AB, sketch_ABC);
     sketch_both(matrix_C, sketch_C, sketch_ABC);
 
-    std::size_t size = sketch_A.size();
-    {
-      sketch_type merge_AB      = (sketch_A + sketch_B);
-      bool        merge_success = merge_AB == sketch_AB;
-      if (merge_success == false) {
-        std::cout << "fails with mean absolute error "
-                  << krowkee::sketch::detail::mean_absolute_error(
-                         merge_AB.container().registers(),
-                         sketch_AB.container().registers())
-                  << std::endl;
-        if (size <= 256) {
-          std::cout << "merge_AB:" << std::endl
-                    << merge_AB << std::endl
-                    << std::endl;
-          std::cout << "sketch_AB:" << std::endl
-                    << sketch_AB << std::endl
-                    << std::endl;
-        }
-      }
-      CHECK_CONDITION(merge_success == true, "merge (+)");
-    }
-    {
-      sketch_type merge_ABC          = (sketch_A + sketch_B + sketch_C);
-      bool        multimerge_success = merge_ABC == sketch_ABC;
-      if (multimerge_success == false) {
-        std::cout << "fails with mean absolute error "
-                  << krowkee::sketch::detail::mean_absolute_error(
-                         merge_ABC.container().registers(),
-                         sketch_ABC.container().registers())
-                  << std::endl;
-        if (size <= 256) {
-          std::cout << "merge_ABC:" << std::endl
-                    << merge_ABC << std::endl
-                    << std::endl;
-          std::cout << "sketch_ABC:" << std::endl
-                    << sketch_ABC << std::endl
-                    << std::endl;
-        }
-      }
-      CHECK_CONDITION(multimerge_success == true, "multi-merge (+, +)");
-    }
-    {
-      sketch_A += sketch_B;
-      bool inplace_merge_success = sketch_A == sketch_AB;
-      if (inplace_merge_success == false) {
-        std::cout << "fails with mean absolute error "
-                  << krowkee::sketch::detail::mean_absolute_error(
-                         sketch_A.container().registers(),
-                         sketch_AB.container().registers())
-                  << std::endl;
-        if (size <= 256) {
-          std::cout << "sketch_A:" << std::endl
-                    << sketch_A << std::endl
-                    << std::endl;
-          std::cout << "sketch_AB:" << std::endl
-                    << sketch_AB << std::endl
-                    << std::endl;
-        }
-      }
-      CHECK_CONDITION(inplace_merge_success == true, "merge (+)");
-    }
+    this->run_tests(sketch_A, sketch_B, sketch_C, sketch_AB, sketch_ABC);
   }
 };
 
 #if __has_include(<cereal/cereal.hpp>)
 template <typename SketchType, template <typename> class MakePtrFunc>
-struct serialize_check {
+struct serialize_check : krowkee::test::serialize_check<SketchType> {
   using sketch_type        = SketchType;
   using transform_type     = typename sketch_type::transform_type;
   using transform_ptr_type = typename sketch_type::transform_ptr_type;
@@ -401,30 +236,21 @@ struct serialize_check {
       typename transform_type::col_transform_ptr_type;
   using make_col_ptr_type = MakePtrFunc<col_transform_type>;
 
-  constexpr std::string name() const {
-    std::stringstream ss;
-    ss << transform_type::name() << " serialize";
-    return ss.str();
-  }
-
-  void operator()(const Parameters &params) const {
+  void operator()(const auto &params) const {
     make_ptr_type     _make_ptr     = make_ptr_type();
     make_row_ptr_type _make_row_ptr = make_row_ptr_type();
     make_col_ptr_type _make_col_ptr = make_col_ptr_type();
 
-    row_transform_ptr_type row_transform_ptr(_make_row_ptr(params.seed));
-    col_transform_ptr_type col_transform_ptr(_make_col_ptr(params.seed + 1));
+    row_transform_ptr_type row_transform_ptr(_make_row_ptr(params.seed()));
+    col_transform_ptr_type col_transform_ptr(_make_col_ptr(params.seed() + 1));
     transform_ptr_type     transform_ptr(
         _make_ptr(row_transform_ptr, col_transform_ptr));
-
-    CHECK_ALL_ARCHIVES(*transform_ptr, "sketch functor");
 
     Eigen::MatrixXf matrix = Eigen::MatrixXf::Random(128, 128);
     sketch_type     sketch(transform_ptr);
     sketch_both(matrix, sketch);
 
-    CHECK_ALL_ARCHIVES(sketch.container(), "sketch container");
-    CHECK_ALL_ARCHIVES(sketch, "whole sketch object");
+    this->run_tests(*transform_ptr, sketch);
   }
 };
 #endif
@@ -451,16 +277,16 @@ struct ingest_check {
   }
 
   void rel_mag_test(const transform_ptr_type &transform_ptr,
-                    const Parameters         &params) const {
+                    const auto               &params) const {
     sketch_type     sketch(transform_ptr);
     Eigen::MatrixXf matrix = Eigen::MatrixXf::Random(128, 128);
 
     sketch_both(matrix, sketch);
 
     int    sum(accumulate(sketch, 0.0));
-    double rel_mag((double)sum / (1000 * 1000 * params.range_size *
-                                  params.replication_count));
-    if (params.verbose == true) {
+    double rel_mag((double)sum / (1000 * 1000 * params.range_size() *
+                                  params.replication_count()));
+    if (params.verbose() == true) {
       if (sketch.size() <= 256) {
         std::cout << "\t" << sketch << std::endl;
       }
@@ -471,14 +297,14 @@ struct ingest_check {
   }
 
   void amm_test(const row_transform_ptr_type &transform_ptr,
-                const Parameters             &params) const {
+                const auto                   &params) const {
     const int row_count = 16;
     const int col_count = 512;
 
     double success_rate(0.0);
     double empirical_epsilon(0.0);
     double expected_epsilon = std::sqrt(
-        16 * std::log(row_count) / (params.range_size * params.range_size));
+        16 * std::log(row_count) / (params.range_size() * params.range_size()));
     int trials(10);
     for (int i(0); i < trials; ++i) {
       Eigen::MatrixXf lhs_dense = Eigen::MatrixXf::Random(row_count, col_count);
@@ -501,7 +327,7 @@ struct ingest_check {
       if (sketch_error <= bound) {
         success_rate += 1.0;
       }
-      if (params.verbose) {
+      if (params.verbose()) {
         std::cout << "\tbound " << bound << ", squared error " << sketch_error
                   << " (multiplicative error: " << this_error
                   << ") (in bounds: " << (sketch_error <= bound) << ")"
@@ -520,14 +346,14 @@ struct ingest_check {
   void ammm_test(const row_transform_ptr_type &row_transform_ptr,
                  const col_transform_ptr_type &col_transform_ptr,
                  const transform_ptr_type     &transform_ptr,
-                 const Parameters             &params) const {
+                 const auto                   &params) const {
     const int row_count = 16;
     const int col_count = 512;
 
     double success_rate(0.0);
     double empirical_epsilon(0.0);
     double expected_epsilon = std::sqrt(
-        16 * std::log(row_count) / (params.range_size * params.range_size));
+        16 * std::log(row_count) / (params.range_size() * params.range_size()));
     int trials(10);
     for (int i(0); i < trials; ++i) {
       Eigen::MatrixXf A_dense = Eigen::MatrixXf::Random(row_count, col_count);
@@ -555,7 +381,7 @@ struct ingest_check {
       if (sketch_error <= bound) {
         success_rate += 1.0;
       }
-      if (params.verbose) {
+      if (params.verbose()) {
         std::cout << "\tbound " << bound << ", squared error " << sketch_error
                   << " (multiplicative error: " << this_error
                   << ") (in bounds: " << (sketch_error <= bound) << ")"
@@ -571,13 +397,13 @@ struct ingest_check {
                     ", mean empirical epsilon=", empirical_epsilon, ")");
   }
 
-  void operator()(const Parameters &params) const {
+  void operator()(const auto &params) const {
     make_ptr_type     _make_ptr     = make_ptr_type();
     make_row_ptr_type _make_row_ptr = make_row_ptr_type();
     make_col_ptr_type _make_col_ptr = make_col_ptr_type();
 
-    row_transform_ptr_type row_transform_ptr(_make_row_ptr(params.seed));
-    col_transform_ptr_type col_transform_ptr(_make_col_ptr(params.seed + 1));
+    row_transform_ptr_type row_transform_ptr(_make_row_ptr(params.seed()));
+    col_transform_ptr_type col_transform_ptr(_make_col_ptr(params.seed() + 1));
     transform_ptr_type     transform_ptr(
         _make_ptr(row_transform_ptr, col_transform_ptr));
 
@@ -636,8 +462,8 @@ struct power_iteration_check {
     return svd.singularValues()(0);
   }
 
-  void power_iteration_test(const Parameters &params,
-                            const int         transform_count) const {
+  void power_iteration_test(const auto &params,
+                            const int   transform_count) const {
     make_ptr_type           _make_ptr           = make_ptr_type();
     make_row_ptr_type       _make_row_ptr       = make_row_ptr_type();
     make_final_ptr_type     _make_final_ptr     = make_final_ptr_type();
@@ -653,10 +479,10 @@ struct power_iteration_check {
 
     std::vector<row_transform_ptr_type> single_transform_ptrs;
     for (int i(0); i < single_transform_count; ++i) {
-      single_transform_ptrs.push_back(_make_row_ptr(params.seed + i));
+      single_transform_ptrs.push_back(_make_row_ptr(params.seed() + i));
     }
     final_col_transform_ptr_type final_col_transform_ptr(
-        _make_final_col_ptr(params.seed + transform_count));
+        _make_final_col_ptr(params.seed() + transform_count));
 
     Eigen::MatrixXf AS_matrix = sketch_cols(matrix, single_transform_ptrs[0]);
 
@@ -706,7 +532,7 @@ struct power_iteration_check {
                              replication_count() *
                          sketch_type::transform_type::col_transform_type::
                              replication_count())) /
-        params.range_size);
+        params.range_size());
     int trials(0);
     for (int i(0); i < col_count; ++i) {
       for (int j(i + 1); j < col_count; ++j) {
@@ -720,7 +546,7 @@ struct power_iteration_check {
         if (in_bounds(dist_exact, dist_sketch, expected_epsilon)) {
           success_rate += 1.0;
         }
-        // if (params.verbose && (i == 199) && (j == 230)) {
+        // if (params.verbose() && (i == 199) && (j == 230)) {
         //   std::cout << "\t(" << i << "," << j << ") exact " << dist_exact
         //             << ", sketched " << dist_sketch
         //             << " (multiplicative error: 1 +/- " << this_error
@@ -741,7 +567,7 @@ struct power_iteration_check {
                     ", mean empirical epsilon=", empirical_epsilon, ")");
   }
 
-  void operator()(const Parameters &params) const {
+  void operator()(const auto &params) const {
     power_iteration_test(params, 2);
     power_iteration_test(params, 3);
     power_iteration_test(params, 4);
@@ -771,13 +597,13 @@ struct spot_check {
     return ss.str();
   }
 
-  void operator()(const Parameters &params) const {
+  void operator()(const auto &params) const {
     make_ptr_type     _make_ptr     = make_ptr_type();
     make_row_ptr_type _make_row_ptr = make_row_ptr_type();
     make_col_ptr_type _make_col_ptr = make_col_ptr_type();
 
-    row_transform_ptr_type row_transform_ptr(_make_row_ptr(params.seed));
-    col_transform_ptr_type col_transform_ptr(_make_col_ptr(params.seed + 1));
+    row_transform_ptr_type row_transform_ptr(_make_row_ptr(params.seed()));
+    col_transform_ptr_type col_transform_ptr(_make_col_ptr(params.seed() + 1));
     transform_ptr_type     transform_ptr(
         _make_ptr(row_transform_ptr, col_transform_ptr));
 
@@ -911,7 +737,7 @@ struct spot_check {
  * Execute the battery of tests for the given sketch functor.
  */
 template <typename SketchType, template <typename> class MakePtrFunc>
-void perform_tests(const Parameters &params) {
+void perform_tests(const auto &params) {
   using sketch_type = SketchType;
 
   MakePtrFunc<std::int32_t> mpf;
@@ -935,116 +761,10 @@ void perform_tests(const Parameters &params) {
 #endif
 }
 
-void print_help(char *exe_name) {
-  std::cout
-      << "\nusage:  " << exe_name << "\n"
-      << "\t-c, --count <int>              - number of insertions\n"
-      << "\t-r, --range <int>              - range of sketch transform\n"
-      << "\t-R, --replication <int>        - number of tiled sketch "
-         "transforms\n"
-      << "\t-i, --int-range <int>          - range of (internal) sketch "
-         "transform\n"
-      << "\t-I, --int-replication <int>    - number of (internal) tiled sketch "
-         "transforms\n"
-      << "\t-d, --domain <int>             - domain of sketch transform\n"
-      << "\t-b, --observation_count <int>  - number of sketches to test\n"
-      << "\t-s, --seed <int>               - random seed\n"
-      << "\t-v, --verbose                  - print additional debug "
-         "information.\n"
-      << "\t-h, --help                     - print this line and exit\n"
-      << std::endl;
-}
-
-void parse_args(int argc, char **argv, Parameters &params) {
-  int c;
-
-  while (1) {
-    int                  option_index(0);
-    static struct option long_options[] = {
-        {"count", required_argument, NULL, 'c'},
-        {"range", required_argument, NULL, 'r'},
-        {"replication", required_argument, NULL, 'R'},
-        {"int-range", required_argument, NULL, 'i'},
-        {"int-replication", required_argument, NULL, 'I'},
-        {"domain", required_argument, NULL, 'd'},
-        {"observation-count", required_argument, NULL, 'b'},
-        {"seed", required_argument, NULL, 's'},
-        {"verbose", no_argument, NULL, 'v'},
-        {"help", no_argument, NULL, 'h'},
-        {NULL, 0, NULL, 0}};
-
-    int curind = optind;
-    c          = getopt_long(argc, argv, "-:c:r:R:i:I:d:b:s:vh", long_options,
-                             &option_index);
-    if (c == -1) {
-      break;
-    }
-
-    switch (c) {
-      case 'h':
-        print_help(argv[0]);
-        exit(-1);
-        break;
-      case 0:
-        printf("long option %s", long_options[option_index].name);
-        if (optarg) {
-          printf(" with arg %s", optarg);
-        }
-        printf("\n");
-        break;
-      case 1:
-        printf("unused regular argument ignored %s\n", optarg);
-        break;
-      case 'c':
-        params.count = std::atol(optarg);
-        break;
-      case 'r':
-        params.range_size = std::atoll(optarg);
-        break;
-      case 'R':
-        params.replication_count = std::atoll(optarg);
-        break;
-      case 'i':
-        params.internal_range_size = std::atoll(optarg);
-        break;
-      case 'I':
-        params.internal_replication_count = std::atoll(optarg);
-        break;
-      case 'd':
-        params.domain_size = std::atoll(optarg);
-        break;
-      case 'b':
-        params.observation_count = std::atoll(optarg);
-        break;
-      case 's':
-        params.seed = std::atol(optarg);
-        break;
-      case 'v':
-        params.verbose = true;
-        break;
-      case '?':
-        if (optopt == 0) {
-          printf("Unknown long option \"%s\",", argv[curind]);
-        } else {
-          printf("Unknown option %c,", optopt);
-        }
-        printf(" consult %s --help\n", argv[0]);
-        break;
-      case ':':
-        printf("Missing argument for option -%c/--%s\n", optopt,
-               long_options[option_index].name);
-        break;
-      default:
-        printf("?? getopt returned character code 0%o ??\n", c);
-        break;
-    }
-  }
-}
-
 template <std::size_t InternalRangeSize, std::size_t InternalReplicationCount,
           std::size_t FinalRangeSize, std::size_t FinalReplicationCount>
 struct do_all_tests {
-  void operator()(const Parameters &params) {
+  void operator()(const auto &params) {
     perform_tests<
         matrix::DoubleSparseJLT<FinalRangeSize, FinalReplicationCount>,
         make_ptr_functor>(params);
@@ -1057,30 +777,11 @@ struct do_all_tests {
 };
 
 int main(int argc, char **argv) {
-  uint64_t      count(1000);
-  std::size_t   range_size(32);
-  std::size_t   replication_count(4);
-  std::size_t   internal_range_size(128);
-  std::size_t   internal_replication_count(4);
-  std::size_t   domain_size(4096);
-  std::size_t   observation_count(16);
-  std::uint64_t seed(krowkee::hash::default_seed);
-  bool          verbose(false);
-
-  Parameters params{count,
-                    range_size,
-                    replication_count,
-                    internal_range_size,
-                    internal_replication_count,
-                    domain_size,
-                    observation_count,
-                    seed,
-                    verbose};
-
-  parse_args(argc, argv, params);
+  using parameters  = krowkee::test::matrix::parameters;
+  parameters params = krowkee::test::chirp_parameters<parameters>(argc, argv);
 
   krowkee::dispatch_rectangular<do_all_tests, void>{
-      params.internal_range_size, params.internal_replication_count,
-      params.range_size, params.replication_count}(params);
+      params.internal_range_size(), params.internal_replication_count(),
+      params.range_size(), params.replication_count()}(params);
   return 0;
 }

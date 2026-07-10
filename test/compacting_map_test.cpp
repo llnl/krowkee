@@ -17,20 +17,9 @@
 #if __has_include(<cereal/cereal.hpp>)
 #include <check_archive.hpp>
 #endif
+#include <parameters.hpp>
 
-#include <getopt.h>
-#include <stdio.h>
-#include <unistd.h>
-
-#include <algorithm>
-#include <chrono>
-#include <cstdlib>
-#include <cstring>
-#include <ctime>
-#include <fstream>
-#include <iostream>
 #include <random>
-#include <vector>
 
 using krowkee::chirp;
 using krowkee::do_test;
@@ -67,22 +56,11 @@ std::vector<int> get_random_vector(const int count, const std::uint32_t seed) {
   return vec;
 }
 
-/**
- * Struct bundling the experiment parameters.
- */
-struct Parameters {
-  std::vector<int> to_insert;
-  std::uint32_t    count;
-  std::size_t      thresh;
-  std::uint32_t    seed;
-  bool             verbose;
-};
-
 struct clear_check {
   const char *name() { return "clear check"; }
 
   template <typename MapType>
-  void operator()(MapType &cm, const Parameters params) const {
+  void operator()(MapType &cm, const auto params) const {
     bool init_empty = cm.empty();
 
     CHECK_CONDITION(init_empty == true, "initial empty");
@@ -101,51 +79,49 @@ struct insert_check {
   const char *name() { return "insert check"; }
 
   template <typename MapType>
-  void operator()(MapType &cm, const Parameters params) const {
+  void operator()(MapType &cm, const auto params,
+                  const std::vector<int> &to_insert) const {
     int  counter(0);
     bool all_success(true);
 
     auto cm_start(Clock::now());
-    std::for_each(std::begin(params.to_insert), std::end(params.to_insert),
-                  [&](const int i) {
-                    bool success = cm.insert({i, i});
-                    // auto [iter, success] = cm.insert({i, i});
-                    counter++;
-                    if (success == false) {
-                      std::cout << "FAILED " << pair_type{i, i} << std::endl;
-                      all_success == false;
-                    }
-                    if (params.verbose == true) {
-                      std::cout << "on " << counter << "th insert (size "
-                                << cm.size() << ") : " << pair_type{i, i} << ":"
-                                << std::endl;
-                      std::cout << cm.print_state() << std::endl << std::endl;
-                    }
-                  });
+    std::for_each(std::begin(to_insert), std::end(to_insert), [&](const int i) {
+      bool success = cm.insert({i, i});
+      // auto [iter, success] = cm.insert({i, i});
+      counter++;
+      if (success == false) {
+        std::cout << "FAILED " << pair_type{i, i} << std::endl;
+        all_success == false;
+      }
+      if (params.verbose() == true) {
+        std::cout << "on " << counter << "th insert (size " << cm.size()
+                  << ") : " << pair_type{i, i} << ":" << std::endl;
+        std::cout << cm.print_state() << std::endl << std::endl;
+      }
+    });
     CHECK_CONDITION(all_success, "iterative insert");
 
     map_type map;
     auto     map_start(Clock::now());
-    std::for_each(std::begin(params.to_insert), std::end(params.to_insert),
-                  [&](const int i) {
-                    auto [iter, success] = map.insert({i, i});
-                  });
+    std::for_each(std::begin(to_insert), std::end(to_insert), [&](const int i) {
+      auto [iter, success] = map.insert({i, i});
+    });
     auto end(Clock::now());
 
     {  // Test whether attempting to insert a dynamic element correctly fails
-      bool success = cm.insert({params.to_insert[params.count - 1], 1});
+      bool success = cm.insert({to_insert[params.count() - 1], 1});
       // auto [iter, success] = cm.insert({to_insert[count - 1], 1});
       CHECK_CONDITION(success == false, "dynamic insert");
     }
     {  // Test whether attempting to insert an archive element correctly fails
-      bool success = cm.insert({params.to_insert[0], 1});
+      bool success = cm.insert({to_insert[0], 1});
       // auto [iter, success] = cm.insert({to_insert[0], 1});
       CHECK_CONDITION(success == false, "archive insert");
     }
     auto cm_ns(
         std::chrono::duration_cast<ns_type>(map_start - cm_start).count());
     auto map_ns(std::chrono::duration_cast<ns_type>(end - map_start).count());
-    std::cout << "Inserted " << params.count
+    std::cout << "Inserted " << params.count()
               << " elements into compact map with compaction threshold "
               << cm.compaction_threshold() << " in " << cm_ns
               << " ns versus std::map in " << map_ns << " ns ("
@@ -157,15 +133,16 @@ struct find_check {
   const char *name() { return "find check"; }
 
   template <typename MapType>
-  void operator()(MapType &cm, const Parameters params) const {
+  void operator()(MapType &cm, const auto params,
+                  const std::vector<int> &to_insert) const {
     {  // Test whether * returns the correct reference from the find() iterator
-      auto q            = cm.find(params.to_insert[params.count - 1]);
-      bool find_success = (*q).second == params.to_insert[params.count - 1];
+      auto q            = cm.find(to_insert[params.count() - 1]);
+      bool find_success = (*q).second == to_insert[params.count() - 1];
       CHECK_CONDITION(find_success == true, "positive find ((*).second)");
     }
     {  // Test whether -> returns the correct reference from the find() iterator
-      auto q            = cm.find(params.to_insert[params.count - 1]);
-      bool find_success = q->second == params.to_insert[params.count - 1];
+      auto q            = cm.find(to_insert[params.count() - 1]);
+      bool find_success = q->second == to_insert[params.count() - 1];
       CHECK_CONDITION(find_success == true, "positive find (*->second)");
     }
     {  // Test whether find() returns end() iterator on unseen element.
@@ -190,8 +167,9 @@ struct accessor_check {
   const char *name() { return "accessor check"; }
 
   template <typename MapType>
-  void operator()(MapType &cm, const Parameters params) const {
-    auto key = params.to_insert[params.count - 1];
+  void operator()(MapType &cm, const auto params,
+                  const std::vector<int> &to_insert) const {
+    auto key = to_insert[params.count() - 1];
     {
       auto q          = cm.find(key);
       auto val1       = cm[key];
@@ -242,7 +220,7 @@ struct erase_check {
   const char *name() { return "erase check"; }
 
   template <typename MapType>
-  void operator()(MapType &cm, const Parameters params) const {
+  void operator()(MapType &cm, const auto params) const {
     int newkey1 = -1;
     int newkey2 = -2;
     {
@@ -290,8 +268,9 @@ struct const_funcs_check {
   const char *name() { return "const funcs check"; }
 
   template <typename MapType>
-  void operator()(const MapType &cm, const Parameters params) const {
-    int good_key = params.to_insert[0];
+  void operator()(const MapType &cm, const auto params,
+                  const std::vector<int> &to_insert) const {
+    int good_key = to_insert[0];
     int bad_key  = -4;
     {
       auto q           = cm.at(good_key);
@@ -323,11 +302,11 @@ struct const_funcs_check {
     }
     {
       for (const auto &p : cm) {
-        if (params.verbose == true) {
+        if (params.verbose() == true) {
           std::cout << p << " ";
         }
       }
-      if (params.verbose == true) {
+      if (params.verbose() == true) {
         std::cout << std::endl;
       }
       CHECK_CONDITION(true, "const iteration");
@@ -339,7 +318,7 @@ struct copy_check {
   const char *name() { return "copy check"; }
 
   template <typename MapType>
-  void operator()(const MapType &cm, const Parameters params) const {
+  void operator()(const MapType &cm, const auto &params) const {
     int new_key = -4;
     {
       MapType cm2(cm);
@@ -365,7 +344,7 @@ struct serialize_check {
   const char *name() { return "serialize check"; }
 
   template <typename MapType>
-  void operator()(const MapType &cm, const Parameters params) const {
+  void operator()(const MapType &cm, const auto params) const {
     CHECK_THROWS<std::logic_error>(
         check_throws_uncompacted_archive<std::stringstream,
                                          cereal::BinaryOutputArchive, MapType>,
@@ -380,22 +359,22 @@ struct serialize_check {
 #endif
 
 template <typename MapType>
-void do_experiment(const Parameters params) {
-  MapType cm(params.thresh);
+void do_experiment(const auto &params, const std::vector<int> &to_insert) {
+  MapType cm(params.thresh());
 
   print_line();
   print_line();
-  std::cout << "Experiment inserting " << params.count << " elements to "
+  std::cout << "Experiment inserting " << params.count() << " elements to "
             << cm.full_name() << std::endl;
   print_line();
   print_line();
   std::cout << std::endl;
   do_test<clear_check>(cm, params);
-  do_test<insert_check>(cm, params);
-  do_test<find_check>(cm, params);
-  do_test<accessor_check>(cm, params);
+  do_test<insert_check>(cm, params, to_insert);
+  do_test<find_check>(cm, params, to_insert);
+  do_test<accessor_check>(cm, params, to_insert);
   do_test<erase_check>(cm, params);
-  do_test<const_funcs_check>(cm, params);
+  do_test<const_funcs_check>(cm, params, to_insert);
   do_test<copy_check>(cm, params);
 #if __has_include(<cereal/cereal.hpp>)
   do_test<serialize_check>(cm, params);
@@ -403,98 +382,35 @@ void do_experiment(const Parameters params) {
   std::cout << std::endl;
 }
 
-void print_help(char *exe_name) {
-  std::cout << "\nusage:  " << exe_name << "\n"
-            << "\t-c, --count <int>     - number of insertions\n"
-            << "\t-m, --map-type <str>  - map type (std, boost)\n"
-            << "\t-s, --seed <int>      - random seed\n"
-            << "\t-t, --thresh <int>    - compaction threshold\n"
-            << "\t-v, --verbose         - print additional debug information.\n"
-            << "\t-h, --help            - print this line and exit\n"
-            << std::endl;
-}
+struct parameters : public krowkee::test::hash::parameters {
+  using base_type = krowkee::test::hash::parameters;
 
-void parse_args(int argc, char **argv, Parameters &params) {
-  int c;
+  krowkee::parameter<std::uint64_t> thresh;
 
-  while (1) {
-    int                  option_index(0);
-    static struct option long_options[] = {
-        {"count", required_argument, NULL, 'c'},
-        {"seed", required_argument, NULL, 's'},
-        {"thresh", required_argument, NULL, 't'},
-        {"verbose", no_argument, NULL, 'v'},
-        {"help", no_argument, NULL, 'h'},
-        {NULL, 0, NULL, 0}};
-
-    int curind = optind;
-    c = getopt_long(argc, argv, "-:c:s:t:vh", long_options, &option_index);
-    if (c == -1) {
-      break;
-    }
-
-    switch (c) {
-      case 'h':
-        print_help(argv[0]);
-        exit(-1);
-        break;
-      case 0:
-        printf("long option %s", long_options[option_index].name);
-        if (optarg) {
-          printf(" with arg %s", optarg);
-        }
-        printf("\n");
-        break;
-      case 1:
-        printf("unused regular argument ignored %s\n", optarg);
-        break;
-      case 'c':
-        params.count = std::atol(optarg);
-        break;
-      case 's':
-        params.seed = std::atol(optarg);
-        break;
-      case 't':
-        params.thresh = std::atoll(optarg);
-        break;
-      case 'v':
-        params.verbose = true;
-        break;
-      case '?':
-        if (optopt == 0) {
-          printf("Unknown long option \"%s\",", argv[curind]);
-        } else {
-          printf("Unknown option %c,", optopt);
-        }
-        printf(" consult %s --help\n", argv[0]);
-        break;
-      case ':':
-        printf("Missing argument for option -%c/--%s\n", optopt,
-               long_options[option_index].name);
-        break;
-      default:
-        printf("?? getopt returned character code 0%o ??\n", c);
-        break;
-    }
+  parameters()
+      : base_type(), thresh("thresh", "Compaction threshold", 't', true, 5) {
+    _params.push_back(&thresh);
   }
-}
+
+  bool _help_needed() const override {
+    bool ret = base_type::_help_needed();
+    if (thresh() == 0) {
+      std::cout << "Must indicate a positive number of compaction threshold."
+                << std::endl;
+      return true;
+    }
+    return ret;
+  }
+};
 
 int main(int argc, char **argv) {
-  std::uint32_t  count(1000);
-  std::uint32_t  seed(0);
-  std::size_t    thresh(5);
-  bool           verbose(false);
+  parameters params = krowkee::test::chirp_parameters<parameters>(argc, argv);
 
-  Parameters params{
-      get_random_vector(count, seed), count, thresh, seed, verbose};
+  std::vector<int> to_insert = get_random_vector(params.count(), params.seed());
 
-  parse_args(argc, argv, params);
-
-  params.to_insert = get_random_vector(params.count, params.seed);
-
-  do_experiment<cmap_type>(params);
+  do_experiment<cmap_type>(params, to_insert);
 #if __has_include(<boost/container/flat_map.hpp>)
-  do_experiment<cmap_boost_type>(params);
+  do_experiment<cmap_boost_type>(params, to_insert);
 #endif
   return 0;
 }
