@@ -71,8 +71,25 @@ double constexpr estimate_hll(const ContainerType &registers) {
        << ") and expected size " << HashType::size();
     throw std::logic_error(ss.str());
   }
-  double alpha = 0.7213 / (1.0 + 1.079 / HashType::size());
-  alpha *= HashType::size() * HashType::size();
+  // double alpha = 0.7213 / (1.0 + 1.079 / HashType::size());
+  // alpha *= HashType::size() * HashType::size();
+  double        alpha;
+  std::uint32_t m_ = HashType::size();
+  switch (m_) {
+    case 16:
+      alpha = 0.673;
+      break;
+    case 32:
+      alpha = 0.697;
+      break;
+    case 64:
+      alpha = 0.709;
+      break;
+    default:
+      alpha = 0.7213 / (1.0 + 1.079 / m_);
+      break;
+  }
+  double alphaMM_ = alpha * m_ * m_;
 
   constexpr const double pow_2_32     = 4294967296.0;   ///< 2^32
   constexpr const double neg_pow_2_32 = -4294967296.0;  ///< -(2^32)
@@ -80,20 +97,19 @@ double constexpr estimate_hll(const ContainerType &registers) {
   // copied from old impl
   double estimate;
   double sum = 0.0;
-  for (uint32_t i = 0; i < HashType::size(); i++) {
+  for (uint32_t i = 0; i < m_; ++i) {
     sum += 1.0 / (1 << registers[i]);
   }
-  estimate = alpha / sum;  // E in the original paper
-  if (estimate <= 2.5 * HashType::size()) {
+  estimate = alphaMM_ / sum;  // E in the original paper
+  if (estimate <= 2.5 * m_) {
     uint32_t zeros = 0;
-    for (uint32_t i = 0; i < HashType::size(); i++) {
+    for (uint32_t i = 0; i < m_; i++) {
       if (registers[i] == 0) {
         zeros++;
       }
     }
     if (zeros != 0) {
-      estimate = HashType::size() *
-                 std::log(static_cast<double>(HashType::size()) / zeros);
+      estimate = m_ * std::log(static_cast<double>(m_) / zeros);
     }
   } else if (estimate > (1.0 / 30.0) * pow_2_32) {
     estimate = neg_pow_2_32 * log(1.0 - (estimate / pow_2_32));
@@ -117,78 +133,81 @@ struct empirical_histograms {
     for (std::uint64_t i(0); i < params.count(); ++i) {
       auto [index, zero_count] = hash(i);
       ++index_hist[index];
-      ++zero_count_hist[zero_count];
+      ++zero_count_hist[zero_count - 1];
       registers[index] = std::max(registers[index], zero_count);
     }
-    {
-      online_statistics os{};
-      os.push(index_hist);
-      double mean(os.mean()), var(os.variance()), std_dev(os.std_dev()),
-          target(std_dev_range * mean);
-      if (params.verbose() == true) {
-        std::cout << "Empirical histogram of " << params.count()
-                  << " elements hashed to " << range_size << " bins using "
-                  << HashType::name() << " with state:" << std::endl;
-        std::cout
-            << "[" << hash.state() << "], ("
-            << std::chrono::duration_cast<ns_type>(Clock::now() - start).count()
-            << " ns):";
+    if (params.count() > range_size * 500) {
+      {
+        online_statistics os{};
+        os.push(index_hist);
+        double mean(os.mean()), var(os.variance()), std_dev(os.std_dev()),
+            target(std_dev_range * mean);
+        if (params.verbose() == true) {
+          std::cout << "Empirical histogram of " << params.count()
+                    << " elements hashed to " << range_size << " bins using "
+                    << HashType::name() << " with state:" << std::endl;
+          std::cout << "[" << hash.state() << "], ("
+                    << std::chrono::duration_cast<ns_type>(Clock::now() - start)
+                           .count()
+                    << " ns):";
 
-        for (int i(0); i < range_size; ++i) {
-          if (i % 20 == 0) {
-            std::cout << "\n\t";
+          for (int i(0); i < range_size; ++i) {
+            if (i % 20 == 0) {
+              std::cout << "\n\t";
+            }
+            std::cout << index_hist[i] << " ";
           }
-          std::cout << index_hist[i] << " ";
+          std::cout << std::endl;
+          std::cout << "\tmean: " << mean << ", variance: " << var
+                    << ", std dev: " << std_dev
+                    << ", max target std dev: " << target << std::endl;
         }
-        std::cout << std::endl;
-        std::cout << "\tmean: " << mean << ", variance: " << var
-                  << ", std dev: " << std_dev
-                  << ", max target std dev: " << target << std::endl;
+        std::stringstream ss;
+        ss << HashType::name() << " index std dev";
+        CHECK_CONDITION(std_dev < target, ss.str());
       }
-      std::stringstream ss;
-      ss << HashType::name() << " index std dev";
-      CHECK_CONDITION(std_dev < target, ss.str());
-    }
-    {
-      std::vector<double> zc_empirical_distribution;
-      std::vector<double> zc_target_distribution;
-      double              current_target = 1;
-      for (int i(0); i < zero_count_hist.size(); ++i) {
-        current_target /= 2;
-        zc_target_distribution.push_back(current_target);
-        zc_empirical_distribution.push_back((double)zero_count_hist[i] /
-                                            params.count());
-      }
-      double distance_target(std_dev_range);
-      double stat_dist = statistical_distance(zc_empirical_distribution,
-                                              zc_target_distribution);
-      if (params.verbose() == true) {
-        std::cout << "Empirical count histogram of " << params.count()
-                  << " leading zero hashes with max zero count "
-                  << HashType::max_zero_count() << std::endl;
-        std::cout << "\t";
+      {
+        std::vector<double> zc_empirical_distribution;
+        std::vector<double> zc_target_distribution;
+        double              current_target = 1;
         for (int i(0); i < zero_count_hist.size(); ++i) {
-          std::cout << zero_count_hist[i] << " ";
+          current_target /= 2;
+          zc_target_distribution.push_back(current_target);
+          zc_empirical_distribution.push_back((double)zero_count_hist[i] /
+                                              params.count());
         }
-        std::cout << std::endl;
-        std::cout << "Empirical distribution " << std::endl;
-        std::cout << "\t";
-        for (int i(0); i < zc_empirical_distribution.size(); ++i) {
-          std::cout << zc_empirical_distribution[i] << " ";
+        double distance_target(std_dev_range);
+        double stat_dist = statistical_distance(zc_empirical_distribution,
+                                                zc_target_distribution);
+        if (params.verbose() == true) {
+          std::cout << "Empirical count histogram of " << params.count()
+                    << " leading zero hashes with max zero count "
+                    << HashType::max_zero_count() << std::endl;
+          std::cout << "\t";
+          for (int i(0); i < zero_count_hist.size(); ++i) {
+            std::cout << zero_count_hist[i] << " ";
+          }
+          std::cout << std::endl;
+          std::cout << "Empirical distribution " << std::endl;
+          std::cout << "\t";
+          for (int i(0); i < zc_empirical_distribution.size(); ++i) {
+            std::cout << zc_empirical_distribution[i] << " ";
+          }
+          std::cout << std::endl;
+          std::cout << "Target distribution " << std::endl;
+          std::cout << "\t";
+          for (int i(0); i < zc_target_distribution.size(); ++i) {
+            std::cout << zc_target_distribution[i] << " ";
+          }
+          std::cout << std::endl;
+          std::cout << "Statistical distance: " << stat_dist << std::endl;
+          std::cout << std::endl << std::endl;
         }
-        std::cout << std::endl;
-        std::cout << "Target distribution " << std::endl;
-        std::cout << "\t";
-        for (int i(0); i < zc_target_distribution.size(); ++i) {
-          std::cout << zc_target_distribution[i] << " ";
-        }
-        std::cout << std::endl;
-        std::cout << "Statistical distance: " << stat_dist << std::endl;
-        std::cout << std::endl << std::endl;
+        std::stringstream ss;
+        ss << HashType::name()
+           << " zero count statistical distance from target ";
+        CHECK_CONDITION(stat_dist < distance_target, ss.str());
       }
-      std::stringstream ss;
-      ss << HashType::name() << " zero count statistical distance from target";
-      CHECK_CONDITION(stat_dist < distance_target, ss.str());
     }
     {
       double estimate = estimate_hll<HashType>(registers);
@@ -197,6 +216,11 @@ struct empirical_histograms {
         std::cout << "Estimated cardinality of " << estimate << " given "
                   << params.count() << " inserts, relative error = " << rel_err
                   << std::endl;
+        std::cout << "Registers:" << std::endl;
+        for (int i(0); i < registers.size(); ++i) {
+          std::cout << (int)registers[i] << " ";
+        }
+        std::cout << std::endl << std::endl;
       }
     }
     // {

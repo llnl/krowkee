@@ -102,7 +102,8 @@ struct HyperLogLogHash {
         _GET_CLZ((hash << _range_width), _max_zero_count) - 1;
     // std::cout << std::bitset<32>(hash) << std::endl;
     // std::cout << std::bitset<_range_width>(index) << std::endl;
-    // std::cout << std::bitset<_max_zero_count>(zero_count) << std::endl;
+    // std::cout << std::bitset<32>(hash << _range_width) << std::endl;
+    // std::cout << (int)zero_count << std::endl;
     // exit(0);
     return {index, zero_count};
   }
