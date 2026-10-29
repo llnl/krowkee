@@ -42,9 +42,9 @@ int main(int argc, char **argv) {
 
   parameters params = krowkee::test::chirp_parameters<parameters>(argc, argv);
 
-  do_experiment(4, params);
-  do_experiment(6, params);
-  do_experiment(9, params);
+  do_experiment(16, params);
+  do_experiment(64, params);
+  do_experiment(512, params);
 
   return 0;
 }

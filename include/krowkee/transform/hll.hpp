@@ -191,6 +191,10 @@ class HyperLogLog {
 
  protected:
   krowkee::hash::HyperLogLogHash<16> _hash;
+  uint32_t                           m_;        ///< register size
+  uint8_t                            b_;        ///< register bit width
+  double                             alphaMM_;  ///< alpha * m^2
+  std::vector<uint8_t>               M_;        ///< registers
 
  public:
   /**
@@ -201,9 +205,10 @@ class HyperLogLog {
    *
    * @exception std::invalid_argument the argument is out of range.
    */
-  HyperLogLog(uint8_t b = 4, std::uint64_t seed = 1)
-      : _hash(seed), b_(b), m_(1 << b), M_(m_, 0) {
-    if (b < 4 || 30 < b) {
+  HyperLogLog(uint32_t m = 16, std::uint64_t seed = 1)
+      : _hash(seed), m_(m), b_(std::log2(m_)), M_(m_, 0) {
+    std::cout << "(b, m) = (" << int(b_) << ", " << m_ << ")" << std::endl;
+    if (b_ < 4 || 30 < b_) {
       throw std::invalid_argument("bit width must be in the range [4,30]");
     }
 
@@ -327,25 +332,9 @@ class HyperLogLog {
    * @param[in,out] rhs Another HyperLogLog instance
    */
   void swap(HyperLogLog &rhs) {
-    std::swap(b_, rhs.b_);
     std::swap(m_, rhs.m_);
     std::swap(alphaMM_, rhs.alphaMM_);
     M_.swap(rhs.M_);
-  }
-
-  /**
-   * Dump the current status to a stream
-   *
-   * @param[out] os The output stream where the data is saved
-   *
-   * @exception std::runtime_error When failed to dump.
-   */
-  void dump(std::ostream &os) const {
-    os.write((char *)&b_, sizeof(b_));
-    os.write((char *)&M_[0], sizeof(M_[0]) * M_.size());
-    if (os.fail()) {
-      throw std::runtime_error("Failed to dump");
-    }
   }
 
   constexpr const std::vector<uint8_t> &registers() const { return M_; }
@@ -367,12 +356,6 @@ class HyperLogLog {
     }
     swap(tempHLL);
   }
-
- protected:
-  uint8_t              b_;        ///< register bit width
-  uint32_t             m_;        ///< register size
-  double               alphaMM_;  ///< alpha * m^2
-  std::vector<uint8_t> M_;        ///< registers
 };
 
 }  // namespace krowkee::transform
