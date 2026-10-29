@@ -67,7 +67,109 @@ inline uint8_t _get_leading_zero_count(uint32_t x, uint8_t b) {
 #define _GET_CLZ(x, b) _get_leading_zero_count(x, b)
 #endif /* defined(__GNUC__) */
 
-namespace hll {
+namespace krowkee::hash {
+
+template <std::size_t RangeSize>
+struct HyperLogLogHash {
+  using self_type = HyperLogLogHash<RangeSize>;
+
+  // check that RangeSize is a power of 2
+  static_assert((RangeSize > 0 && (RangeSize & (RangeSize - 1)) == 0),
+                "RangeSize must be a power of 2 for HyperLogLog hash");
+
+ protected:
+  std::uint64_t                _seed;
+  static constexpr std::size_t _range_width    = std::log2(RangeSize);
+  static constexpr std::size_t _max_zero_count = 32 - _range_width;
+
+ public:
+  /**
+   * @brief Constructor for the HyperLogLogHash functor
+   *
+   * @param seed the random seed controlling the randomness.
+   */
+  template <typename... Args>
+  HyperLogLogHash(const std::uint64_t seed, const Args &...args)
+      : _seed(seed) {}
+
+  HyperLogLogHash() {}
+
+  /**
+   * Compute the register hash and leading zero count of the input.
+   *
+   * @tparam OBJ the object to be hashed. Presently must fit into a 64-bit
+   *     register.
+   *
+   * @param x the obejct to be hashed.
+   */
+  template <typename OBJ>
+  constexpr std::uint64_t operator()(const OBJ &x) const {
+    std::uint64_t hash64[2];
+    MurmurHash3_x86_128((void *)&x, sizeof(std::uint64_t), _seed,
+                        (void *)&hash64);
+    return hash64[0];
+  }
+
+  /**
+   * @brief Print functor name
+   *
+   * @return constexpr std::string
+   */
+  static constexpr std::string name() {
+    std::stringstream ss;
+    ss << "HyperLogLogHash";
+    return ss.str();
+  }
+
+  /**
+   * @brief Print fully-qualified functor name
+   *
+   * @return constexpr std::string
+   */
+  static constexpr std::string full_name() {
+    std::stringstream ss;
+    ss << name() << "<" << RangeSize << ">";
+    return ss.str();
+  }
+
+  static constexpr std::size_t size() { return RangeSize; }
+  static constexpr std::size_t max_zero_count() { return _max_zero_count; }
+  static constexpr std::size_t range_width() { return _range_width; }
+  constexpr std::size_t        seed() const { return _seed; }
+
+  constexpr std::string state() const {
+    std::stringstream ss;
+    ss << "size: " << size() << ", seed: " << seed();
+    return ss.str();
+  }
+
+#if __has_include(<cereal/types/base_class.hpp>)
+  template <class Archive>
+  void serialize(Archive &archive) {
+    archive(_seed);
+  }
+#endif
+
+  friend void swap(self_type &lhs, self_type &rhs) {
+    std::swap(lhs._seed, rhs._seed);
+  }
+  friend constexpr bool operator==(const self_type &lhs, const self_type &rhs) {
+    return lhs._seed == rhs._seed;
+  }
+
+  friend constexpr bool operator!=(const self_type &lhs, const self_type &rhs) {
+    return !operator==(lhs, rhs);
+  }
+
+  friend std::ostream &operator<<(std::ostream &os, const self_type &func) {
+    os << func.state();
+    return os;
+  }
+};
+
+}  // namespace krowkee::hash
+
+namespace krowkee::transform {
 
 static const double pow_2_32     = 4294967296.0;   ///< 2^32
 static const double neg_pow_2_32 = -4294967296.0;  ///< -(2^32)
@@ -77,6 +179,15 @@ static const double neg_pow_2_32 = -4294967296.0;  ///< -(2^32)
  */
 class HyperLogLog {
  public:
+  using self_type       = HyperLogLog;
+  using index_type      = std::uint32_t;
+  using zero_count_type = std::uint8_t;
+  using update_type     = std::pair<index_type, zero_count_type>;
+
+ protected:
+  krowkee::hash::HyperLogLogHash<16> _hash;
+
+ public:
   /**
    * Constructor
    *
@@ -85,7 +196,8 @@ class HyperLogLog {
    *
    * @exception std::invalid_argument the argument is out of range.
    */
-  HyperLogLog(uint8_t b = 4) : b_(b), m_(1 << b), M_(m_, 0) {
+  HyperLogLog(uint8_t b = 4, std::uint64_t seed = 1)
+      : _hash(seed), b_(b), m_(1 << b), M_(m_, 0) {
     if (b < 4 || 30 < b) {
       throw std::invalid_argument("bit width must be in the range [4,30]");
     }
@@ -114,17 +226,23 @@ class HyperLogLog {
   HyperLogLog &operator=(HyperLogLog &)       = default;
   HyperLogLog &operator=(const HyperLogLog &) = default;
 
+  template <typename ObjType>
+  constexpr update_type apply(const ObjType &obj) const {
+    index_type      hash       = _hash(obj);
+    index_type      index      = hash >> (32 - b_);
+    zero_count_type zero_count = _GET_CLZ((hash << b_), 32 - b_);
+    return {index, zero_count};
+  }
   /**
    * Inserts element to the data structure
    *
    * @param[in] str string to insert
    * @param[in] len length of string
    */
-  void insert(uint32_t hash) {
-    uint32_t index = hash >> (32 - b_);
-    uint8_t  rank  = _GET_CLZ((hash << b_), 32 - b_);
-    if (rank > M_[index]) {
-      M_[index] = rank;
+  void insert(uint32_t obj) {
+    const auto [index, zero_count] = apply(obj);
+    if (zero_count > M_[index]) {
+      M_[index] = zero_count;
     }
     // std::cout << std::bitset<32>(hash) << std::endl;
     // std::cout << std::bitset<4>(index) << std::endl;
@@ -252,6 +370,6 @@ class HyperLogLog {
   std::vector<uint8_t> M_;        ///< registers
 };
 
-}  // namespace hll
+}  // namespace krowkee::transform
 
 #endif  // !defined(HYPERLOGLOG_HPP)

@@ -5,6 +5,7 @@
 #include <krowkee/util/runtime.hpp>
 
 #if __has_include(<cereal/cereal.hpp>)
+#include <cereal/types/base_class.hpp>
 #include <check_archive.hpp>
 #endif
 #include <parameters.hpp>
@@ -12,17 +13,6 @@
 #include <cstdint>
 
 using krowkee::dispatch_with_sketch_sizes;
-
-template <typename S>
-void inline accumulate(S &sketch, std::uint64_t n, std::uint32_t seed,
-                       std::uint64_t start = 0) {
-  for (std::uint64_t i(start); i < start + n; ++i) {
-    std::uint64_t hash64[2];
-    MurmurHash3_x86_128((void *)&i, sizeof(std::uint64_t), seed,
-                        (void *)&hash64);
-    sketch.insert(hash64[0]);
-  }
-}
 
 template <typename C>
 void print_container(const C &vec, const char *name) {
@@ -46,14 +36,17 @@ int do_experiment(int argc, char **argv) {
     seed = std::atoi(argv[3]);
   }
 
-  hll::HyperLogLog sketch(prefix_size);
-  accumulate(sketch, num_inserts, seed);
+  krowkee::transform::HyperLogLog sketch(prefix_size, seed);
+  for (std::uint64_t i(0); i < num_inserts; ++i) {
+    sketch.insert(i);
+  }
+
   double est = sketch.estimate();
   double err = std::abs(num_inserts - est) / num_inserts;
   std::cout << "tru: " << num_inserts << std::endl;
   std::cout << "est: " << est << std::endl;
   std::cout << "err: " << err << std::endl;
-  print_container(sketch.registers(), "sketch");
+  // print_container(sketch.registers(), "sketch");
   // std::cout << "pre-merge" << std::endl;
   // std::cout << reg;
   // reg.merge();
