@@ -40,33 +40,6 @@
 #include <stdexcept>
 #include <vector>
 
-#define HLL_HASH_SEED 313
-
-#if defined(__has_builtin) && (defined(__GNUC__) || defined(__clang__))
-
-#define _GET_CLZ(x, b) (uint8_t)std::min(b, ::__builtin_clz(x)) + 1
-
-#else
-
-inline uint8_t _get_leading_zero_count(uint32_t x, uint8_t b) {
-
-#if defined(_MSC_VER)
-  uint32_t leading_zero_len = 32;
-  ::_BitScanReverse(&leading_zero_len, x);
-  --leading_zero_len;
-  return std::min(b, (uint8_t)leading_zero_len);
-#else
-  uint8_t v = 1;
-  while (v <= b && !(x & 0x80000000)) {
-    v++;
-    x <<= 1;
-  }
-  return v;
-#endif
-}
-#define _GET_CLZ(x, b) _get_leading_zero_count(x, b)
-#endif /* defined(__GNUC__) */
-
 namespace krowkee::hash {
 
 template <std::size_t RangeSize>
@@ -238,9 +211,10 @@ class HyperLogLog {
 
   template <typename ObjType>
   constexpr update_type apply(const ObjType &obj) const {
-    index_type      hash       = _hash(obj);
-    index_type      index      = hash >> (32 - b_);
-    zero_count_type zero_count = _GET_CLZ((hash << b_), 32 - b_);
+    index_type      hash  = _hash(obj);
+    index_type      index = hash >> (32 - b_);
+    zero_count_type zero_count =
+        (uint8_t)std::min(32 - b_, std::countl_zero(hash << b_)) + 1;
     return {index, zero_count};
   }
   /**
