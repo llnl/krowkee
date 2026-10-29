@@ -71,7 +71,10 @@ namespace krowkee::hash {
 
 template <std::size_t RangeSize>
 struct HyperLogLogHash {
-  using self_type = HyperLogLogHash<RangeSize>;
+  using index_type      = std::uint32_t;
+  using zero_count_type = std::uint8_t;
+  using update_type     = std::pair<index_type, zero_count_type>;
+  using self_type       = HyperLogLogHash<RangeSize>;
 
   // check that RangeSize is a power of 2
   static_assert((RangeSize > 0 && (RangeSize & (RangeSize - 1)) == 0),
@@ -177,12 +180,14 @@ static const double neg_pow_2_32 = -4294967296.0;  ///< -(2^32)
 /** @class HyperLogLog
  *  @brief Implement of 'HyperLogLog' estimate cardinality algorithm
  */
+template <typename HashType = krowkee::hash::HyperLogLogHash<16>>
 class HyperLogLog {
  public:
+  using hash_type       = HashType;
+  using index_type      = typename hash_type::index_type;
+  using zero_count_type = typename hash_type::zero_count_type;
+  using update_type     = typename hash_type::update_type;
   using self_type       = HyperLogLog;
-  using index_type      = std::uint32_t;
-  using zero_count_type = std::uint8_t;
-  using update_type     = std::pair<index_type, zero_count_type>;
 
  protected:
   krowkee::hash::HyperLogLogHash<16> _hash;
