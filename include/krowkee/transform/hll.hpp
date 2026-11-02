@@ -54,7 +54,7 @@ struct HyperLogLogHash {
                 "RangeSize must be a power of 2 for HyperLogLog hash");
 
  protected:
-  std::uint64_t                _seed;
+  std::uint32_t                _seed;
   static constexpr std::size_t _range_width    = std::log2(RangeSize);
   static constexpr std::size_t _max_zero_count = 32 - _range_width;
 
@@ -65,7 +65,7 @@ struct HyperLogLogHash {
    * @param seed the random seed controlling the randomness.
    */
   template <typename... Args>
-  HyperLogLogHash(const std::uint64_t seed, const Args &...args)
+  HyperLogLogHash(const std::uint32_t seed, const Args &...args)
       : _seed(seed) {}
 
   HyperLogLogHash() {}
@@ -79,11 +79,15 @@ struct HyperLogLogHash {
    * @param x the obejct to be hashed.
    */
   template <typename OBJ>
-  constexpr std::uint64_t operator()(const OBJ &x) const {
-    std::uint64_t hash64[2];
-    MurmurHash3_x86_128((void *)&x, sizeof(std::uint64_t), _seed,
-                        (void *)&hash64);
-    return hash64[0];
+  constexpr std::uint32_t operator()(const OBJ &x) const {
+    // std::uint64_t hash64[2];
+    // MurmurHash3_x86_128((void *)&x, sizeof(std::uint64_t), _seed,
+    //                     (void *)&hash64);
+    // return hash64[0];
+    std::uint32_t hash32;
+    MurmurHash3_x86_32((void *)&x, sizeof(std::uint32_t), _seed,
+                       (void *)&hash32);
+    return hash32;
   }
 
   /**
@@ -178,9 +182,9 @@ class HyperLogLog {
    *
    * @exception std::invalid_argument the argument is out of range.
    */
-  HyperLogLog(uint32_t m = 16, std::uint64_t seed = 1)
+  HyperLogLog(uint32_t m = 16, std::uint32_t seed = 1)
       : _hash(seed), m_(m), b_(std::log2(m_)), M_(m_, 0) {
-    std::cout << "(b, m) = (" << int(b_) << ", " << m_ << ")" << std::endl;
+    // std::cout << "(b, m) = (" << int(b_) << ", " << m_ << ")" << std::endl;
     if (b_ < 4 || 30 < b_) {
       throw std::invalid_argument("bit width must be in the range [4,30]");
     }
