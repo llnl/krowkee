@@ -43,20 +43,23 @@
 namespace krowkee::hash {
 
 template <std::size_t RangeSize>
-struct HyperLogLogHash {
+struct HyperLogLogHash32 {
   using index_type      = std::uint32_t;
   using zero_count_type = std::uint8_t;
   using update_type     = std::pair<index_type, zero_count_type>;
-  using self_type       = HyperLogLogHash<RangeSize>;
-
-  // check that RangeSize is a power of 2
-  static_assert((RangeSize > 0 && (RangeSize & (RangeSize - 1)) == 0),
-                "RangeSize must be a power of 2 for HyperLogLog hash");
+  using self_type       = HyperLogLogHash32<RangeSize>;
 
  protected:
-  std::uint32_t                _seed;
-  static constexpr std::size_t _range_width    = std::log2(RangeSize);
-  static constexpr std::size_t _max_zero_count = 32 - _range_width;
+  std::uint32_t                  _seed;
+  static constexpr std::size_t   _range_size     = RangeSize;
+  static constexpr std::uint32_t _range_width    = std::log2(_range_size);
+  static constexpr int           _max_zero_count = 32 - _range_width;
+
+  // check that _range_size is a power of 2
+  static_assert((_range_size > 0 && (_range_size & (_range_size - 1)) == 0),
+                "RangeSize must be a power of 2 for HyperLogLog hash");
+  static_assert(_range_width > 3 && _range_width < 31,
+                "bit width must be in the range [4,30]");
 
  public:
   /**
@@ -65,10 +68,10 @@ struct HyperLogLogHash {
    * @param seed the random seed controlling the randomness.
    */
   template <typename... Args>
-  HyperLogLogHash(const std::uint32_t seed, const Args &...args)
+  HyperLogLogHash32(const std::uint32_t seed, const Args &...args)
       : _seed(seed) {}
 
-  HyperLogLogHash() {}
+  HyperLogLogHash32() {}
 
   /**
    * Compute the register hash and leading zero count of the input.
@@ -79,15 +82,19 @@ struct HyperLogLogHash {
    * @param x the obejct to be hashed.
    */
   template <typename OBJ>
-  constexpr std::uint32_t operator()(const OBJ &x) const {
+  constexpr update_type operator()(const OBJ &x) const {
     // std::uint64_t hash64[2];
     // MurmurHash3_x86_128((void *)&x, sizeof(std::uint64_t), _seed,
     //                     (void *)&hash64);
     // return hash64[0];
-    std::uint32_t hash32;
-    MurmurHash3_x86_32((void *)&x, sizeof(std::uint32_t), _seed,
-                       (void *)&hash32);
-    return hash32;
+    index_type hash32;
+    MurmurHash3_x86_32((void *)&x, sizeof(index_type), _seed, (void *)&hash32);
+    index_type      index32 = hash32 >> _max_zero_count;
+    zero_count_type zero_count32 =
+        (uint8_t)std::min(_max_zero_count,
+                          std::countl_zero(hash32 << _range_width)) +
+        1;
+    return {index32, zero_count32};
   }
 
   /**
@@ -108,11 +115,12 @@ struct HyperLogLogHash {
    */
   static constexpr std::string full_name() {
     std::stringstream ss;
-    ss << name() << "<" << RangeSize << ">";
+    ss << name() << "<" << _range_size << ">";
     return ss.str();
   }
 
-  static constexpr std::size_t size() { return RangeSize; }
+  static constexpr std::size_t size() { return _range_size; }
+  static constexpr std::size_t range_size() { return _range_size; }
   static constexpr std::size_t max_zero_count() { return _max_zero_count; }
   static constexpr std::size_t range_width() { return _range_width; }
   constexpr std::size_t        seed() const { return _seed; }
@@ -157,7 +165,7 @@ static const double neg_pow_2_32 = -4294967296.0;  ///< -(2^32)
 /** @class HyperLogLog
  *  @brief Implement of 'HyperLogLog' estimate cardinality algorithm
  */
-template <typename HashType = krowkee::hash::HyperLogLogHash<16>>
+template <typename HashType>
 class HyperLogLog {
  public:
   using hash_type       = HashType;
@@ -167,45 +175,29 @@ class HyperLogLog {
   using self_type       = HyperLogLog;
 
  protected:
-  krowkee::hash::HyperLogLogHash<16> _hash;
-  uint32_t                           m_;        ///< register size
-  uint8_t                            b_;        ///< register bit width
-  double                             alphaMM_;  ///< alpha * m^2
-  std::vector<uint8_t>               M_;        ///< registers
+  hash_type                    _hash;
+  static constexpr std::size_t _range_size =
+      hash_type::range_size();         ///< register size
+  std::vector<uint8_t>    _registers;  ///< registers
+  static constexpr double _alpha =
+      (hash_type::range_size() == 16)   ? 0.673
+      : (hash_type::range_size() == 32) ? 0.697
+      : (hash_type::range_size() == 64)
+          ? 0.709
+          : 0.7213 / (1.0 + 1.079 / hash_type::range_size());
+  static constexpr double _scaling_factor =
+      _alpha * hash_type::range_size() * hash_type::range_size();
 
  public:
   /**
    * Constructor
    *
-   * @param[in] b bit width (register size will be 2 to the b power).
-   *            This value must be in the range[4,30].Default value is 4.
+   * @param seed random seed for the hash function.
    *
    * @exception std::invalid_argument the argument is out of range.
    */
-  HyperLogLog(uint32_t m = 16, std::uint32_t seed = 1)
-      : _hash(seed), m_(m), b_(std::log2(m_)), M_(m_, 0) {
-    // std::cout << "(b, m) = (" << int(b_) << ", " << m_ << ")" << std::endl;
-    if (b_ < 4 || 30 < b_) {
-      throw std::invalid_argument("bit width must be in the range [4,30]");
-    }
-
-    double alpha;
-    switch (m_) {
-      case 16:
-        alpha = 0.673;
-        break;
-      case 32:
-        alpha = 0.697;
-        break;
-      case 64:
-        alpha = 0.709;
-        break;
-      default:
-        alpha = 0.7213 / (1.0 + 1.079 / m_);
-        break;
-    }
-    alphaMM_ = alpha * m_ * m_;
-  }
+  HyperLogLog(std::uint32_t seed = 1)
+      : _hash(seed), _registers(_range_size, 0) {}
 
   // Assignment operators
   HyperLogLog(const HyperLogLog &)            = default;
@@ -215,11 +207,7 @@ class HyperLogLog {
 
   template <typename ObjType>
   constexpr update_type apply(const ObjType &obj) const {
-    index_type      hash  = _hash(obj);
-    index_type      index = hash >> (32 - b_);
-    zero_count_type zero_count =
-        (uint8_t)std::min(32 - b_, std::countl_zero(hash << b_)) + 1;
-    return {index, zero_count};
+    return _hash(obj);
   }
   /**
    * Inserts element to the data structure
@@ -229,12 +217,11 @@ class HyperLogLog {
    */
   void insert(uint32_t obj) {
     const auto [index, zero_count] = apply(obj);
-    if (zero_count > M_[index]) {
-      M_[index] = zero_count;
+    if (zero_count > _registers[index]) {
+      _registers[index] = zero_count;
     }
     // std::cout << std::bitset<32>(hash) << std::endl;
     // std::cout << std::bitset<4>(index) << std::endl;
-    // std::cout << std::bitset<32>(hash << b_) << std::endl;
     // std::cout << (int)rank << std::endl;
   }
 
@@ -246,19 +233,20 @@ class HyperLogLog {
   double estimate() {
     double estimate;
     double sum = 0.0;
-    for (uint32_t i = 0; i < m_; i++) {
-      sum += 1.0 / (1 << M_[i]);
+    for (uint32_t i = 0; i < _range_size; i++) {
+      sum += 1.0 / (1 << _registers[i]);
     }
-    estimate = alphaMM_ / sum;  // E in the original paper
-    if (estimate <= 2.5 * m_) {
+    estimate = _scaling_factor / sum;  // E in the original paper
+    if (estimate <= 2.5 * _range_size) {
       uint32_t zeros = 0;
-      for (uint32_t i = 0; i < m_; i++) {
-        if (M_[i] == 0) {
+      for (uint32_t i = 0; i < _range_size; i++) {
+        if (_registers[i] == 0) {
           zeros++;
         }
       }
       if (zeros != 0) {
-        estimate = m_ * std::log(static_cast<double>(m_) / zeros);
+        estimate =
+            _range_size * std::log(static_cast<double>(_range_size) / zeros);
       }
     } else if (estimate > (1.0 / 30.0) * pow_2_32) {
       estimate = neg_pow_2_32 * log(1.0 - (estimate / pow_2_32));
@@ -275,14 +263,15 @@ class HyperLogLog {
    * @exception std::invalid_argument number of registers doesn't match.
    */
   void merge(const HyperLogLog &other) {
-    if (m_ != other.m_) {
+    if (_range_size != other._range_size) {
       std::stringstream ss;
-      ss << "number of registers doesn't match: " << m_ << " != " << other.m_;
+      ss << "number of registers doesn't match: " << _range_size
+         << " != " << other._range_size;
       throw std::invalid_argument(ss.str().c_str());
     }
-    for (uint32_t r = 0; r < m_; ++r) {
-      if (M_[r] < other.M_[r]) {
-        M_[r] |= other.M_[r];
+    for (uint32_t r = 0; r < _range_size; ++r) {
+      if (_registers[r] < other._registers[r]) {
+        _registers[r] |= other._registers[r];
       }
     }
   }
@@ -295,45 +284,23 @@ class HyperLogLog {
   /**
    * Clears all internal registers.
    */
-  void clear() { std::fill(M_.begin(), M_.end(), 0); }
+  void clear() { std::fill(_registers.begin(), _registers.end(), 0); }
 
   /**
    * Returns size of register.
    *
    * @return Register size
    */
-  uint32_t registerSize() const { return m_; }
+  uint32_t registerSize() const { return _range_size; }
 
   /**
    * Exchanges the content of the instance
    *
    * @param[in,out] rhs Another HyperLogLog instance
    */
-  void swap(HyperLogLog &rhs) {
-    std::swap(m_, rhs.m_);
-    std::swap(alphaMM_, rhs.alphaMM_);
-    M_.swap(rhs.M_);
-  }
+  void swap(HyperLogLog &rhs) { _registers.swap(rhs._registers); }
 
-  constexpr const std::vector<uint8_t> &registers() const { return M_; }
-
-  /**
-   * Restore the status from a stream
-   *
-   * @param[in] is The input stream where the status is saved
-   *
-   * @exception std::runtime_error When failed to restore.
-   */
-  void restore(std::istream &is) {
-    uint8_t b = 0;
-    is.read((char *)&b, sizeof(b));
-    HyperLogLog tempHLL(b);
-    is.read((char *)&(tempHLL.M_[0]), sizeof(M_[0]) * tempHLL.m_);
-    if (is.fail()) {
-      throw std::runtime_error("Failed to restore");
-    }
-    swap(tempHLL);
-  }
+  constexpr const std::vector<uint8_t> &registers() const { return _registers; }
 };
 
 }  // namespace krowkee::transform

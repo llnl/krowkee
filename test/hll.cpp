@@ -18,13 +18,14 @@ void print_container(const C &vec, const char *name) {
   std::cout << std::endl;
 }
 
-void do_experiment(std::uint32_t prefix_size, auto params) {
+template <typename SketchType>
+void do_experiment(auto params) {
   const int iteration_count(10);
   double    mean_err(0.0);
   double    success_rate(0.0);
-  double    thresh = (1.04 / std::sqrt(prefix_size));
+  double    thresh = (1.04 / std::sqrt(SketchType::hash_type::range_size()));
   for (int i(0); i < iteration_count; ++i) {
-    krowkee::transform::HyperLogLog sketch(prefix_size, params.seed() + i);
+    SketchType sketch(params.seed() + i);
     for (std::uint64_t j(0); j < params.count(); ++j) {
       sketch.insert(j);
     }
@@ -42,8 +43,8 @@ void do_experiment(std::uint32_t prefix_size, auto params) {
   mean_err /= iteration_count;
   success_rate /= iteration_count;
   std::cout << "(range_size, mean err, threshold, success_rate) ("
-            << prefix_size << ", " << mean_err << ", " << thresh << ", "
-            << success_rate << ")" << std::endl;
+            << SketchType::hash_type::range_size() << ", " << mean_err << ", "
+            << thresh << ", " << success_rate << ")" << std::endl;
   // print_container(sketch.registers(), "sketch");
   // std::cout << "pre-merge" << std::endl;
   // std::cout << reg;
@@ -53,14 +54,18 @@ void do_experiment(std::uint32_t prefix_size, auto params) {
   return;
 }
 
+template <std::size_t RangeSize>
+using sketch_type = krowkee::transform::HyperLogLog<
+    krowkee::hash::HyperLogLogHash32<RangeSize>>;
+
 int main(int argc, char **argv) {
   using parameters = krowkee::test::hash::parameters;
 
   parameters params = krowkee::test::chirp_parameters<parameters>(argc, argv);
 
-  do_experiment(16, params);
-  do_experiment(64, params);
-  do_experiment(512, params);
+  do_experiment<sketch_type<16>>(params);
+  do_experiment<sketch_type<64>>(params);
+  do_experiment<sketch_type<512>>(params);
 
   return 0;
 }
