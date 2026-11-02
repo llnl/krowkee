@@ -1,6 +1,5 @@
-#include <krowkee/hash/hash.hpp>
+#include <krowkee/hash/hll.hpp>
 #include <krowkee/transform/hll.hpp>
-#include "krowkee/hash/murmur3.h"
 
 #if __has_include(<cereal/cereal.hpp>)
 #include <cereal/types/base_class.hpp>
