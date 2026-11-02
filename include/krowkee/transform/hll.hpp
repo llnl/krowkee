@@ -85,6 +85,28 @@ class HyperLogLog {
   HyperLogLog &operator=(HyperLogLog &)       = default;
   HyperLogLog &operator=(const HyperLogLog &) = default;
 
+  /**
+   * @brief Print functor name
+   *
+   * @return constexpr std::string
+   */
+  static constexpr std::string name() {
+    std::stringstream ss;
+    ss << "HyperLogLog";
+    return ss.str();
+  }
+
+  /**
+   * @brief Print fully-qualified functor name
+   *
+   * @return constexpr std::string
+   */
+  static constexpr std::string full_name() {
+    std::stringstream ss;
+    ss << name() << "<" << hash_type::full_name() << ">";
+    return ss.str();
+  }
+
   template <typename ObjType>
   constexpr update_type apply(const ObjType &obj) const {
     return _hash(obj);

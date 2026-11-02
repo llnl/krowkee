@@ -76,7 +76,7 @@ struct HyperLogLogHash32 {
    */
   static constexpr std::string name() {
     std::stringstream ss;
-    ss << "HyperLogLogHash";
+    ss << "HyperLogLogHash32";
     return ss.str();
   }
 
