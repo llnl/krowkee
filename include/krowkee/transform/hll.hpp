@@ -32,14 +32,6 @@
 
 #include "krowkee/hash/murmur3.h"
 
-#include <algorithm>
-#include <bitset>
-#include <cmath>
-#include <iostream>
-#include <sstream>
-#include <stdexcept>
-#include <vector>
-
 namespace krowkee::hash {
 
 template <std::size_t RangeSize>
