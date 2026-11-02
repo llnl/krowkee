@@ -19,15 +19,31 @@ void print_container(const C &vec, const char *name) {
 }
 
 void do_experiment(std::uint32_t prefix_size, auto params) {
-  krowkee::transform::HyperLogLog sketch(prefix_size, params.seed());
-  for (std::uint64_t i(0); i < params.count(); ++i) {
-    sketch.insert(i);
-  }
+  const int iteration_count(10);
+  double    mean_err(0.0);
+  double    success_rate(0.0);
+  double    thresh = (1.04 / std::sqrt(prefix_size));
+  for (int i(0); i < iteration_count; ++i) {
+    krowkee::transform::HyperLogLog sketch(prefix_size, params.seed() + i);
+    for (std::uint64_t j(0); j < params.count(); ++j) {
+      sketch.insert(j);
+    }
 
-  double est = sketch.estimate();
-  double err = std::abs(params.count() - est) / params.count();
-  std::cout << "(tru, est, err): (" << params.count() << ", " << est << ", "
-            << err << ")" << std::endl;
+    double est     = sketch.estimate();
+    double err     = std::abs(params.count() - est) / params.count();
+    bool   success = err < thresh;
+    mean_err += err;
+    success_rate += success;
+    if (i == 0 && params.verbose()) {
+      std::cout << "\t(tru, est, err): (" << params.count() << ", " << est
+                << ", " << err << ")" << std::endl;
+    }
+  }
+  mean_err /= iteration_count;
+  success_rate /= iteration_count;
+  std::cout << "(range_size, mean err, threshold, success_rate) ("
+            << prefix_size << ", " << mean_err << ", " << thresh << ", "
+            << success_rate << ")" << std::endl;
   // print_container(sketch.registers(), "sketch");
   // std::cout << "pre-merge" << std::endl;
   // std::cout << reg;
