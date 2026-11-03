@@ -14,8 +14,46 @@
 using krowkee::print_line;
 
 template <std::size_t RangeSize>
-using hll_sketch_type = krowkee::transform::HyperLogLog<
-    krowkee::hash::HyperLogLogHash32<RangeSize>>;
+using hll_hash32_type = krowkee::hash::HyperLogLogHash32<RangeSize>;
+
+template <std::size_t RangeSize>
+using hll_sketch_type =
+    krowkee::transform::HyperLogLog<hll_hash32_type<RangeSize>>;
+
+template <typename HashType>
+void hll_init(std::uint32_t i) {
+  HashType hash{i};
+}
+
+template <std::size_t RangeSize>
+struct init_check {
+  const char *name() const { return "hash initialization check"; }
+
+  void operator()() const {
+    for (std::uint64_t i(0); i < 63; ++i) {
+      CHECK_DOES_NOT_THROW<std::exception>(hll_init<hll_hash32_type<RangeSize>>,
+                                           "good value initialization", i);
+    }
+    CHECK_CONDITION(true, "good value initialization");
+  }
+};
+
+#if __has_include(<cereal/cereal.hpp>)
+template <std::size_t RangeSize>
+struct serialize_check {
+  const char *name() { return "serialize check"; }
+
+  template <typename HashType, typename... ARGS>
+  void serialize(const auto &params, ARGS &&...args) const {
+    HashType hash{(std::uint32_t)params.seed(), args...};
+    CHECK_ALL_ARCHIVES(hash, HashType::name());
+  }
+
+  void operator()(const auto params) const {
+    serialize<hll_hash32_type<RangeSize>>(params);
+  }
+};
+#endif
 
 struct guarantee_check {
   const char *name() { return "HLL guarantee check"; }
@@ -94,12 +132,12 @@ struct do_experiment {
     print_line();
     print_line();
     std::cout << std::endl;
-    //     do_test<init_check<RangeSize>>();
-    //     do_test<empirical_histograms<RangeSize>>(params);
-    // #if __has_include(<cereal/cereal.hpp>)
-    //     do_test<serialize_check<RangeSize>>(params);
-    // #endif
-    do_test<guarantee_check>(params);
+    krowkee::do_test<init_check<RangeSize>>();
+//     do_test<empirical_histograms<RangeSize>>(params);
+#if __has_include(<cereal/cereal.hpp>)
+    do_test<serialize_check<RangeSize>>(params);
+#endif
+    krowkee::do_test<guarantee_check>(params);
     std::cout << std::endl;
   }
 };
