@@ -156,6 +156,66 @@ struct guarantee_check {
 };
 
 template <std::size_t RangeSize>
+struct empirical_histograms {
+  const char *name() { return "HLL empirical histograms check"; }
+
+  void operator()(const auto &params) const { foo(params, 0.3); }
+
+  void foo(const auto &params, const double std_dev_range) const {
+    using sketch_type = hll_sketch_type<RangeSize>;
+    sketch_type sketch(params.seed());
+    for (std::uint64_t j(0); j < params.count(); ++j) {
+      sketch.insert(j);
+    }
+
+    const auto &registers = sketch.registers();
+
+    const double sum = std::accumulate(
+        registers.begin(), registers.end(), 0.0,
+        [](const auto &sum, const auto &reg) { return sum + reg; });
+
+    const double mean = sum / RangeSize;
+
+    const double var =
+        std::accumulate(registers.begin(), registers.end(), 0.0,
+                        [&mean](const auto &var, const auto &reg) {
+                          double diff = (double)reg - mean;
+                          return var + diff * diff;
+                        }) /
+        RangeSize;
+    const double std_dev = std::sqrt(var);
+    const double target  = (std_dev_range * mean);
+
+    if (params.verbose()) {
+      std::cout << "\tmean: " << mean << std::endl;
+      std::cout << "\tvar: " << var << std::endl;
+      std::cout << "\tstd_dev: " << std_dev << std::endl;
+      std::cout << "\ttarget: " << target << std::endl;
+    }
+
+    {
+      bool success = (std_dev < target);
+      if (success == false) {
+        std::cout << "empirical register histogram is:" << std::endl;
+        for (const auto reg : sketch.registers()) {
+          std::cout << (int)reg << " ";
+        }
+        std::cout << std::endl;
+        std::cout << "\tmean: " << mean << std::endl;
+        std::cout << "\tvar: " << var << std::endl;
+        std::cout << "\tstd_dev: " << std_dev << std::endl;
+        std::cout << "\ttarget: " << target << std::endl;
+      }
+      std::stringstream ss;
+      ss << sketch_type::full_name() << " register histogram check";
+      CHECK_CONDITION(success == true, ss.str());
+    }
+
+    return;
+  }
+};
+
+template <std::size_t RangeSize>
 struct do_experiment {
   void operator()(const auto &params) {
     print_line();
@@ -167,7 +227,7 @@ struct do_experiment {
     print_line();
     std::cout << std::endl;
     krowkee::do_test<init_check<RangeSize>>();
-    // do_test<empirical_histograms<RangeSize>>(params);
+    do_test<empirical_histograms<RangeSize>>(params);
 #if __has_include(<cereal/cereal.hpp>)
     do_test<serialize_check<RangeSize>>(params);
 #endif
