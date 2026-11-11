@@ -11,7 +11,41 @@
 
 #include <cstdint>
 
+using krowkee::online_statistics;
 using krowkee::print_line;
+
+using Clock   = std::chrono::system_clock;
+using ns_type = std::chrono::nanoseconds;
+
+template <template <std::size_t> class Func, typename ReturnType,
+          typename... Args>
+ReturnType dispatch_hll(const std::size_t &range_size, Args &...args) {
+  switch (range_size) {
+    case 16:
+      return Func<16>{}(args...);
+      break;
+    case 32:
+      return Func<32>{}(args...);
+      break;
+    case 64:
+      return Func<64>{}(args...);
+      break;
+    case 128:
+      return Func<128>{}(args...);
+      break;
+    case 256:
+      return Func<256>{}(args...);
+      break;
+    case 512:
+      return Func<512>{}(args...);
+      break;
+    default:
+      throw std::logic_error(
+          "no-replication dispatch_with_sketch_sizes() convenience function "
+          "only accepts power-of-2 range size from 16-512. Hard-code or create "
+          "a new dispatch function if you need an unsupported range size.");
+  }
+}
 
 template <std::size_t RangeSize>
 using hll_hash32_type = krowkee::hash::HyperLogLogHash32<RangeSize>;
@@ -133,7 +167,7 @@ struct do_experiment {
     print_line();
     std::cout << std::endl;
     krowkee::do_test<init_check<RangeSize>>();
-//     do_test<empirical_histograms<RangeSize>>(params);
+    // do_test<empirical_histograms<RangeSize>>(params);
 #if __has_include(<cereal/cereal.hpp>)
     do_test<serialize_check<RangeSize>>(params);
 #endif
@@ -147,7 +181,8 @@ int main(int argc, char **argv) {
 
   parameters params = krowkee::test::chirp_parameters<parameters>(argc, argv);
 
-  do_experiment<16>()(params);
+  do_experiment<32>{}(params);
+  // dispatch_hll<do_experiment, void>(params.range_size(), params);
 
   return 0;
 }
