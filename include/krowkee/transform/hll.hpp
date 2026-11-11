@@ -34,6 +34,10 @@
  * SOFTWARE.
  */
 
+#if __has_include(<cereal/types/base_class.hpp>)
+#include <cereal/types/base_class.hpp>
+#endif
+
 #include <cstdint>
 #include <vector>
 
@@ -107,6 +111,8 @@ class HyperLogLog {
     return ss.str();
   }
 
+  static constexpr std::size_t range_size() { return _range_size; }
+
   template <typename ObjType>
   constexpr update_type apply(const ObjType &obj) const {
     return _hash(obj);
@@ -126,6 +132,19 @@ class HyperLogLog {
     // std::cout << std::bitset<4>(index) << std::endl;
     // std::cout << (int)rank << std::endl;
   }
+
+#if __has_include(<cereal/cereal.hpp>)
+  /**
+   * @brief Serialize HyperLogLog object to/from `cereal` archive.
+   *
+   * @tparam Archive `cereal` archive type.
+   * @param archive The `cereal` archive to which to serialize the transform.
+   */
+  template <class Archive>
+  void serialize(Archive &archive) {
+    archive(_hash);
+  }
+#endif
 
   /**
    * Estimates cardinality value.

@@ -50,10 +50,6 @@ ReturnType dispatch_hll(const std::size_t &range_size, Args &...args) {
 template <std::size_t RangeSize>
 using hll_hash32_type = krowkee::hash::HyperLogLogHash32<RangeSize>;
 
-template <std::size_t RangeSize>
-using hll_sketch_type =
-    krowkee::transform::HyperLogLog<hll_hash32_type<RangeSize>>;
-
 template <typename HashType>
 void hll_init(std::uint32_t i) {
   HashType hash{i};
@@ -88,6 +84,12 @@ struct serialize_check {
   }
 };
 #endif
+
+/// here begins sketch data structure-aware tests.
+
+template <std::size_t RangeSize>
+using hll_sketch_type =
+    krowkee::transform::HyperLogLog<hll_hash32_type<RangeSize>>;
 
 struct guarantee_check {
   const char *name() { return "HLL guarantee check"; }
@@ -155,15 +157,14 @@ struct guarantee_check {
   }
 };
 
-template <std::size_t RangeSize>
+template <typename SketchType>
 struct empirical_histograms {
   const char *name() { return "HLL empirical histograms check"; }
 
   void operator()(const auto &params) const { foo(params, 0.3); }
 
   void foo(const auto &params, const double std_dev_range) const {
-    using sketch_type = hll_sketch_type<RangeSize>;
-    sketch_type sketch(params.seed());
+    SketchType sketch(params.seed());
     for (std::uint64_t j(0); j < params.count(); ++j) {
       sketch.insert(j);
     }
@@ -174,7 +175,7 @@ struct empirical_histograms {
         registers.begin(), registers.end(), 0.0,
         [](const auto &sum, const auto &reg) { return sum + reg; });
 
-    const double mean = sum / RangeSize;
+    const double mean = sum / SketchType::range_size();
 
     const double var =
         std::accumulate(registers.begin(), registers.end(), 0.0,
@@ -182,16 +183,9 @@ struct empirical_histograms {
                           double diff = (double)reg - mean;
                           return var + diff * diff;
                         }) /
-        RangeSize;
+        SketchType::range_size();
     const double std_dev = std::sqrt(var);
     const double target  = (std_dev_range * mean);
-
-    if (params.verbose()) {
-      std::cout << "\tmean: " << mean << std::endl;
-      std::cout << "\tvar: " << var << std::endl;
-      std::cout << "\tstd_dev: " << std_dev << std::endl;
-      std::cout << "\ttarget: " << target << std::endl;
-    }
 
     {
       bool success = (std_dev < target);
@@ -207,7 +201,7 @@ struct empirical_histograms {
         std::cout << "\ttarget: " << target << std::endl;
       }
       std::stringstream ss;
-      ss << sketch_type::full_name() << " register histogram check";
+      ss << SketchType::full_name() << " register histogram check";
       CHECK_CONDITION(success == true, ss.str());
     }
 
@@ -227,7 +221,7 @@ struct do_experiment {
     print_line();
     std::cout << std::endl;
     krowkee::do_test<init_check<RangeSize>>();
-    do_test<empirical_histograms<RangeSize>>(params);
+    do_test<empirical_histograms<hll_sketch_type<RangeSize>>>(params);
 #if __has_include(<cereal/cereal.hpp>)
     do_test<serialize_check<RangeSize>>(params);
 #endif
