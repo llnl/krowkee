@@ -11,7 +11,7 @@
 
 #include <krowkee/util/eigen.hpp>
 
-#include <algorithm>
+#include <numeric>
 #include <sstream>
 #include <vector>
 
