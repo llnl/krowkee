@@ -206,6 +206,25 @@ class HyperLogLog {
    * @param[in,out] rhs Another HyperLogLog instance
    */
   void swap(HyperLogLog &rhs) { _hash.swap(rhs._hash); }
+
+  /**
+   * @brief Check for equality between two SparseJLTs.
+   *
+   * @param lhs The left-hand functor.
+   * @param rhs The right-hand functor.
+   * @return true The seeds and range sizes agree.
+   * @return false The seeds or range sizes disagree.
+   */
+  friend constexpr bool operator==(const self_type &lhs, const self_type &rhs) {
+    if (lhs._hash != rhs._hash) {
+      return false;
+    }
+    return true;
+  }
+
+  friend constexpr bool operator!=(const self_type &lhs, const self_type &rhs) {
+    return !operator==(lhs, rhs);
+  }
 };
 
 }  // namespace krowkee::transform

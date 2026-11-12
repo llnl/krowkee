@@ -1,3 +1,12 @@
+// Copyright 2021-2026 Lawrence Livermore National Security, LLC and other
+// krowkee Project Developers. See the top-level COPYRIGHT file for detaisketch.
+//
+// SPDX-License-Identifier: MIT
+
+#include <parameters.hpp>
+#include <sketch_test_templates.hpp>
+#include <sketch_types.hpp>
+
 #include <krowkee/hash/hll.hpp>
 #include <krowkee/sketch/Dense.hpp>
 #include <krowkee/sketch/Sketch.hpp>
@@ -9,9 +18,6 @@
 #include <cereal/types/base_class.hpp>
 #include <check_archive.hpp>
 #endif
-
-#include <parameters.hpp>
-#include <sketch_types.hpp>
 
 #include <cstdint>
 
@@ -60,7 +66,7 @@ void hll_init(std::uint32_t i) {
 }
 
 template <std::size_t RangeSize>
-struct init_check {
+struct init_hash_check {
   const char *name() const { return "hash initialization check"; }
 
   void operator()() const {
@@ -74,8 +80,8 @@ struct init_check {
 
 #if __has_include(<cereal/cereal.hpp>)
 template <std::size_t RangeSize>
-struct serialize_check {
-  const char *name() { return "serialize check"; }
+struct serialize_hash_check {
+  const char *name() { return "serialize hash check"; }
 
   template <typename HashType, typename... ARGS>
   void serialize(const auto &params, ARGS &&...args) const {
@@ -104,6 +110,30 @@ template <std::size_t RangeSize>
 using hll_sketch_type = krowkee::sketch::Sketch<
     krowkee::transform::HyperLogLog<std::uint8_t, hll_hash32_type, RangeSize>,
     krowkee::sketch::Dense<std::uint8_t, krowkee::max, RangeSize>, ptr_type>;
+
+template <typename SketchType, template <typename> class MakePtrFunc>
+struct init_check : krowkee::test::init_check<SketchType> {
+  using sketch_type        = SketchType;
+  using transform_type     = typename sketch_type::transform_type;
+  using transform_ptr_type = typename sketch_type::transform_ptr_type;
+  using make_ptr_type      = MakePtrFunc<transform_type>;
+
+  void operator()(const auto &params) const {
+    make_ptr_type      _make_ptr = make_ptr_type();
+    transform_ptr_type lhs_ptr(_make_ptr(0));
+    transform_ptr_type rhs_ptr(_make_ptr(0));
+    sketch_type        lhs(lhs_ptr);
+    sketch_type        rhs(rhs_ptr);
+    sketch_type        empty_sketch(lhs_ptr);
+    sketch_type        not_empty_sketch(lhs_ptr);
+    not_empty_sketch.insert(1);
+    for (int i(0); i < 1000; i++) {
+      lhs.insert(i);
+      rhs.insert(i);
+    }
+    this->run_tests(lhs, rhs, empty_sketch, not_empty_sketch);
+  }
+};
 
 template <template <typename> class MakePtrFunc>
 struct guarantee_check {
@@ -253,11 +283,12 @@ struct do_experiment {
     print_line();
     print_line();
     std::cout << std::endl;
-    krowkee::do_test<init_check<RangeSize>>();
+    krowkee::do_test<init_hash_check<RangeSize>>();
+    do_test<init_check<hll_sketch_type<RangeSize>, make_ptr_functor>>(params);
     do_test<empirical_histograms<hll_sketch_type<RangeSize>, make_ptr_functor>>(
         params);
 #if __has_include(<cereal/cereal.hpp>)
-    do_test<serialize_check<RangeSize>>(params);
+    do_test<serialize_hash_check<RangeSize>>(params);
 #endif
     krowkee::do_test<guarantee_check<make_ptr_functor>>(params);
     std::cout << std::endl;
