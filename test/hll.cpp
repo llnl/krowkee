@@ -135,6 +135,23 @@ struct init_check : krowkee::test::init_check<SketchType> {
   }
 };
 
+template <typename SketchType, template <typename> class MakePtrFunc>
+struct bad_merge_check : public krowkee::test::bad_merge_check<SketchType> {
+  using sketch_type        = SketchType;
+  using transform_type     = typename sketch_type::transform_type;
+  using transform_ptr_type = typename sketch_type::transform_ptr_type;
+  using make_ptr_type      = MakePtrFunc<transform_type>;
+
+  void operator()(const auto &params) const {
+    make_ptr_type      _make_ptr = make_ptr_type();
+    transform_ptr_type lhs_ptr(_make_ptr(32));
+    transform_ptr_type rhs_ptr(_make_ptr(22));
+    sketch_type        lhs(lhs_ptr);
+    sketch_type        rhs(rhs_ptr);
+    this->run_tests(lhs, rhs);
+  }
+};
+
 template <template <typename> class MakePtrFunc>
 struct guarantee_check {
   const char *name() { return "HLL guarantee check"; }
@@ -285,6 +302,8 @@ struct do_experiment {
     std::cout << std::endl;
     krowkee::do_test<init_hash_check<RangeSize>>();
     do_test<init_check<hll_sketch_type<RangeSize>, make_ptr_functor>>(params);
+    do_test<bad_merge_check<hll_sketch_type<RangeSize>, make_ptr_functor>>(
+        params);
     do_test<empirical_histograms<hll_sketch_type<RangeSize>, make_ptr_functor>>(
         params);
 #if __has_include(<cereal/cereal.hpp>)

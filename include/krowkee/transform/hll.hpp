@@ -62,6 +62,7 @@ class HyperLogLog {
   using index_type      = typename hash_type::index_type;
   using zero_count_type = typename hash_type::zero_count_type;
   using update_type     = typename hash_type::update_type;
+  using seed_type       = std::uint32_t;
   using self_type       = HyperLogLog<register_type, HashType, RangeSize>;
 
   // this might need to be reengineered
@@ -88,7 +89,7 @@ class HyperLogLog {
    *
    * @exception std::invalid_argument the argument is out of range.
    */
-  HyperLogLog(std::uint32_t seed = 1) : _hash(seed) {}
+  HyperLogLog(seed_type seed = 1) : _hash(seed) {}
 
   // Assignment operators
   HyperLogLog(const HyperLogLog &)            = default;
@@ -124,6 +125,7 @@ class HyperLogLog {
   static constexpr double        estimator_scaling_factor() {
     return _estimator_scaling_factor;
   }
+  constexpr seed_type seed() const { return _hash.seed(); }
 
   template <typename ObjType>
   constexpr update_type apply(const ObjType &obj) const {
@@ -224,6 +226,20 @@ class HyperLogLog {
 
   friend constexpr bool operator!=(const self_type &lhs, const self_type &rhs) {
     return !operator==(lhs, rhs);
+  }
+
+  /**
+   * @brief Serialize a transform to human-readable output stream.
+   *
+   * Prints the space-separated range size and seed.
+   *
+   * @param os The output stream.
+   * @param func The functor object.
+   * @return std::ostream& The new stream state.
+   */
+  friend std::ostream &operator<<(std::ostream &os, const self_type &func) {
+    os << func.range_size() << " " << func.seed();
+    return os;
   }
 };
 
