@@ -1,4 +1,6 @@
 #include <krowkee/hash/hll.hpp>
+#include <krowkee/sketch/Dense.hpp>
+#include <krowkee/sketch/Sketch.hpp>
 #include <krowkee/transform/hll.hpp>
 
 #include <krowkee/util/runtime.hpp>
@@ -89,7 +91,22 @@ struct serialize_check {
 
 template <std::size_t RangeSize>
 using hll_sketch_type =
-    krowkee::transform::HyperLogLog<hll_hash32_type<RangeSize>>;
+    krowkee::transform::HyperLogLog<std::uint8_t, hll_hash32_type, RangeSize>;
+
+// namespace krowkee {
+// template <class T>
+// struct max {
+//   constexpr T operator()(const T &lhs, const T &rhs) const {
+//     return std::max(lhs, rhs);
+//   }
+// };
+// }  // namespace krowkee
+
+// template <std::size_t RangeSize>
+// using hll_sketch_type = krowkee::sketch::Sketch<
+//     krowkee::transform::HyperLogLog<hll_hash32_type<RangeSize>>,
+//     krowkee::sketch::Dense<std::uint8_t, krowkee::max, RangeSize>,
+//     std::shared_ptr>;
 
 struct guarantee_check {
   const char *name() { return "HLL guarantee check"; }

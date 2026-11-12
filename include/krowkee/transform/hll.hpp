@@ -49,28 +49,33 @@ static const double neg_pow_2_32 = -4294967296.0;  ///< -(2^32)
 /** @class HyperLogLog
  *  @brief Implement of 'HyperLogLog' estimate cardinality algorithm
  */
-template <typename HashType>
+template <typename RegType, template <std::size_t> class HashType,
+          std::size_t RangeSize>
 class HyperLogLog {
  public:
-  using hash_type       = HashType;
+  using hash_type       = HashType<RangeSize>;
+  using register_type   = RegType;
   using index_type      = typename hash_type::index_type;
   using zero_count_type = typename hash_type::zero_count_type;
   using update_type     = typename hash_type::update_type;
-  using self_type       = HyperLogLog;
+  using self_type       = HyperLogLog<register_type, HashType, RangeSize>;
+
+  // this might need to be reengineered
+  static_assert(std::is_same<register_type, zero_count_type>::value,
+                "HLL transform and hash types must both use std::uint8_t "
+                "register types!");
 
  protected:
   hash_type                    _hash;
-  static constexpr std::size_t _range_size =
-      hash_type::range_size();         ///< register size
-  std::vector<uint8_t>    _registers;  ///< registers
-  static constexpr double _alpha =
-      (hash_type::range_size() == 16)   ? 0.673
-      : (hash_type::range_size() == 32) ? 0.697
-      : (hash_type::range_size() == 64)
-          ? 0.709
-          : 0.7213 / (1.0 + 1.079 / hash_type::range_size());
-  static constexpr double _scaling_factor =
-      _alpha * hash_type::range_size() * hash_type::range_size();
+  static constexpr std::size_t _range_size = RangeSize;  ///< register size
+  std::vector<uint8_t>         _registers;               ///< registers
+  static constexpr double _alpha = (_range_size == 16)   ? 0.673
+                                   : (_range_size == 32) ? 0.697
+                                   : (_range_size == 64)
+                                       ? 0.709
+                                       : 0.7213 / (1.0 + 1.079 / _range_size);
+  static constexpr double _estimator_scaling_factor =
+      _alpha * _range_size * _range_size;
 
  public:
   /**
@@ -111,7 +116,12 @@ class HyperLogLog {
     return ss.str();
   }
 
-  static constexpr std::size_t range_size() { return _range_size; }
+  static constexpr std::size_t   range_size() { return _range_size; }
+  static constexpr std::size_t   size() { return range_size(); }
+  static constexpr register_type scaling_factor = 1;
+  static constexpr double        estimator_scaling_factor() {
+    return _estimator_scaling_factor;
+  }
 
   template <typename ObjType>
   constexpr update_type apply(const ObjType &obj) const {
@@ -157,7 +167,7 @@ class HyperLogLog {
     for (uint32_t i = 0; i < _range_size; i++) {
       sum += 1.0 / (1 << _registers[i]);
     }
-    estimate = _scaling_factor / sum;  // E in the original paper
+    estimate = estimator_scaling_factor() / sum;  // E in the original paper
     if (estimate <= 2.5 * _range_size) {
       uint32_t zeros = 0;
       for (uint32_t i = 0; i < _range_size; i++) {
