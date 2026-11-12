@@ -34,6 +34,8 @@
  * SOFTWARE.
  */
 
+#include <krowkee/transform/Element.hpp>
+
 #if __has_include(<cereal/types/base_class.hpp>)
 #include <cereal/types/base_class.hpp>
 #endif
@@ -42,6 +44,8 @@
 #include <vector>
 
 namespace krowkee::transform {
+
+using krowkee::stream::Element;
 
 static const double pow_2_32     = 4294967296.0;   ///< 2^32
 static const double neg_pow_2_32 = -4294967296.0;  ///< -(2^32)
@@ -68,7 +72,6 @@ class HyperLogLog {
  protected:
   hash_type                    _hash;
   static constexpr std::size_t _range_size = RangeSize;  ///< register size
-  std::vector<uint8_t>         _registers;               ///< registers
   static constexpr double _alpha = (_range_size == 16)   ? 0.673
                                    : (_range_size == 32) ? 0.697
                                    : (_range_size == 64)
@@ -85,8 +88,7 @@ class HyperLogLog {
    *
    * @exception std::invalid_argument the argument is out of range.
    */
-  HyperLogLog(std::uint32_t seed = 1)
-      : _hash(seed), _registers(_range_size, 0) {}
+  HyperLogLog(std::uint32_t seed = 1) : _hash(seed) {}
 
   // Assignment operators
   HyperLogLog(const HyperLogLog &)            = default;
@@ -127,20 +129,20 @@ class HyperLogLog {
   constexpr update_type apply(const ObjType &obj) const {
     return _hash(obj);
   }
-  /**
-   * Inserts element to the data structure
-   *
-   * @param[in] str string to insert
-   * @param[in] len length of string
-   */
-  void insert(uint32_t obj) {
-    const auto [index, zero_count] = apply(obj);
-    if (zero_count > _registers[index]) {
-      _registers[index] = zero_count;
+
+  template <typename ContainerType, typename... ItemArgs>
+  constexpr void operator()(ContainerType &registers,
+                            const ItemArgs &...item_args) const {
+    static_assert(std::is_same<register_type,
+                               typename ContainerType::register_type>::value);
+    using merge_type = typename ContainerType::merge_type;
+    const Element<register_type> stream_element(item_args...);
+    const auto [index, zero_count] = apply(stream_element.item);
+    register_type &reg             = registers[index];
+    reg                            = merge_type()(reg, zero_count);
+    if (reg == 0) {
+      registers.erase(index);
     }
-    // std::cout << std::bitset<32>(hash) << std::endl;
-    // std::cout << std::bitset<4>(index) << std::endl;
-    // std::cout << (int)rank << std::endl;
   }
 
 #if __has_include(<cereal/cereal.hpp>)
@@ -161,61 +163,35 @@ class HyperLogLog {
    *
    * @return Estimated cardinality value.
    */
-  double estimate() {
+  template <typename ContainerType>
+  static constexpr double estimate(const ContainerType &container) {
+    static_assert(std::is_same<register_type,
+                               typename ContainerType::register_type>::value);
+    static_assert(range_size() == ContainerType::size());
+
     double estimate;
     double sum = 0.0;
-    for (uint32_t i = 0; i < _range_size; i++) {
-      sum += 1.0 / (1 << _registers[i]);
+    // this can be reengineered to be much more efficient
+    for (uint32_t i = 0; i < range_size(); i++) {
+      sum += 1.0 / (1 << container[i]);
     }
     estimate = estimator_scaling_factor() / sum;  // E in the original paper
-    if (estimate <= 2.5 * _range_size) {
+    if (estimate <= 2.5 * range_size()) {
       uint32_t zeros = 0;
-      for (uint32_t i = 0; i < _range_size; i++) {
-        if (_registers[i] == 0) {
+      for (uint32_t i = 0; i < range_size(); i++) {
+        if (container[i] == 0) {
           zeros++;
         }
       }
       if (zeros != 0) {
         estimate =
-            _range_size * std::log(static_cast<double>(_range_size) / zeros);
+            range_size() * std::log(static_cast<double>(range_size()) / zeros);
       }
     } else if (estimate > (1.0 / 30.0) * pow_2_32) {
       estimate = neg_pow_2_32 * log(1.0 - (estimate / pow_2_32));
     }
     return estimate;
   }
-
-  /**
-   * Merges the estimate from 'other' into this object, returning the estimate
-   * of their union. The number of registers in each must be the same.
-   *
-   * @param[in] other HyperLogLog instance to be merged
-   *
-   * @exception std::invalid_argument number of registers doesn't match.
-   */
-  void merge(const HyperLogLog &other) {
-    if (_range_size != other._range_size) {
-      std::stringstream ss;
-      ss << "number of registers doesn't match: " << _range_size
-         << " != " << other._range_size;
-      throw std::invalid_argument(ss.str().c_str());
-    }
-    for (uint32_t r = 0; r < _range_size; ++r) {
-      if (_registers[r] < other._registers[r]) {
-        _registers[r] |= other._registers[r];
-      }
-    }
-  }
-
-  HyperLogLog &operator+=(const HyperLogLog &other) {
-    merge(other);
-    return *this;
-  }
-
-  /**
-   * Clears all internal registers.
-   */
-  void clear() { std::fill(_registers.begin(), _registers.end(), 0); }
 
   /**
    * Returns size of register.
@@ -229,9 +205,7 @@ class HyperLogLog {
    *
    * @param[in,out] rhs Another HyperLogLog instance
    */
-  void swap(HyperLogLog &rhs) { _registers.swap(rhs._registers); }
-
-  constexpr const std::vector<uint8_t> &registers() const { return _registers; }
+  void swap(HyperLogLog &rhs) { _hash.swap(rhs._hash); }
 };
 
 }  // namespace krowkee::transform

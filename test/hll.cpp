@@ -9,7 +9,9 @@
 #include <cereal/types/base_class.hpp>
 #include <check_archive.hpp>
 #endif
+
 #include <parameters.hpp>
+#include <sketch_types.hpp>
 
 #include <cstdint>
 
@@ -89,25 +91,21 @@ struct serialize_check {
 
 /// here begins sketch data structure-aware tests.
 
+namespace krowkee {
+template <class T>
+struct max {
+  constexpr T operator()(const T &lhs, const T &rhs) const {
+    return std::max(lhs, rhs);
+  }
+};
+}  // namespace krowkee
+
 template <std::size_t RangeSize>
-using hll_sketch_type =
-    krowkee::transform::HyperLogLog<std::uint8_t, hll_hash32_type, RangeSize>;
+using hll_sketch_type = krowkee::sketch::Sketch<
+    krowkee::transform::HyperLogLog<std::uint8_t, hll_hash32_type, RangeSize>,
+    krowkee::sketch::Dense<std::uint8_t, krowkee::max, RangeSize>, ptr_type>;
 
-// namespace krowkee {
-// template <class T>
-// struct max {
-//   constexpr T operator()(const T &lhs, const T &rhs) const {
-//     return std::max(lhs, rhs);
-//   }
-// };
-// }  // namespace krowkee
-
-// template <std::size_t RangeSize>
-// using hll_sketch_type = krowkee::sketch::Sketch<
-//     krowkee::transform::HyperLogLog<hll_hash32_type<RangeSize>>,
-//     krowkee::sketch::Dense<std::uint8_t, krowkee::max, RangeSize>,
-//     std::shared_ptr>;
-
+template <template <typename> class MakePtrFunc>
 struct guarantee_check {
   const char *name() { return "HLL guarantee check"; }
 
@@ -119,20 +117,25 @@ struct guarantee_check {
 
   template <std::size_t RangeSize>
   void check_guarantee(const auto params) {
-    using sketch_type = hll_sketch_type<RangeSize>;
-    const int    iteration_count(10);
-    const double target_rate(0.5);
-    double       mean_err(0.0);
-    double       success_rate(0.0);
-    double       thresh =
-        1.5 * (1.04 / std::sqrt(sketch_type::hash_type::range_size()));
+    using sketch_type        = hll_sketch_type<RangeSize>;
+    using transform_type     = typename sketch_type::transform_type;
+    using transform_ptr_type = typename sketch_type::transform_ptr_type;
+    using make_ptr_type      = MakePtrFunc<transform_type>;
+
+    const int     iteration_count(10);
+    const double  target_rate(0.5);
+    double        mean_err(0.0);
+    double        success_rate(0.0);
+    double        thresh = 1.5 * (1.04 / std::sqrt(RangeSize));
+    make_ptr_type _make_ptr{};
     for (int i(0); i < iteration_count; ++i) {
-      sketch_type sketch(params.seed() + i);
+      transform_ptr_type transform_ptr(_make_ptr(params.seed() + i));
+      sketch_type        sketch(transform_ptr);
       for (std::uint64_t j(0); j < params.count(); ++j) {
         sketch.insert(j);
       }
 
-      double est     = sketch.estimate();
+      double est     = transform_type::estimate(sketch.container());
       double err     = std::abs(params.count() - est) / params.count();
       bool   success = err < thresh;
       mean_err += err;
@@ -145,8 +148,8 @@ struct guarantee_check {
     mean_err /= iteration_count;
     success_rate /= iteration_count;
     std::cout << "\t(range_size, mean err, threshold, success_rate) ("
-              << sketch_type::hash_type::range_size() << ", " << mean_err
-              << ", " << thresh << ", " << success_rate << ")" << std::endl;
+              << RangeSize << ", " << mean_err << ", " << thresh << ", "
+              << success_rate << ")" << std::endl;
     {
       bool success = (mean_err < thresh);
       if (success == false) {
@@ -174,25 +177,32 @@ struct guarantee_check {
   }
 };
 
-template <typename SketchType>
+template <typename SketchType, template <typename> class MakePtrFunc>
 struct empirical_histograms {
+  using sketch_type        = SketchType;
+  using transform_type     = typename sketch_type::transform_type;
+  using transform_ptr_type = typename sketch_type::transform_ptr_type;
+  using make_ptr_type      = MakePtrFunc<transform_type>;
+
   const char *name() { return "HLL empirical histograms check"; }
 
   void operator()(const auto &params) const { foo(params, 0.3); }
 
   void foo(const auto &params, const double std_dev_range) const {
-    SketchType sketch(params.seed());
+    make_ptr_type      _make_ptr{};
+    transform_ptr_type transform_ptr(_make_ptr(params.seed()));
+    sketch_type        sketch(transform_ptr);
     for (std::uint64_t j(0); j < params.count(); ++j) {
       sketch.insert(j);
     }
 
-    const auto &registers = sketch.registers();
+    const auto &registers = sketch.container().registers();
 
     const double sum = std::accumulate(
         registers.begin(), registers.end(), 0.0,
         [](const auto &sum, const auto &reg) { return sum + reg; });
 
-    const double mean = sum / SketchType::range_size();
+    const double mean = sum / sketch_type::range_size();
 
     const double var =
         std::accumulate(registers.begin(), registers.end(), 0.0,
@@ -200,15 +210,21 @@ struct empirical_histograms {
                           double diff = (double)reg - mean;
                           return var + diff * diff;
                         }) /
-        SketchType::range_size();
+        sketch_type::range_size();
     const double std_dev = std::sqrt(var);
     const double target  = (std_dev_range * mean);
 
     {
       bool success = (std_dev < target);
+      // if (params.verbose()) {
+      //   std::cout << "\tmean: " << mean << std::endl;
+      //   std::cout << "\tvar: " << var << std::endl;
+      //   std::cout << "\tstd_dev: " << std_dev << std::endl;
+      //   std::cout << "\ttarget: " << target << std::endl;
+      // }
       if (success == false) {
         std::cout << "empirical register histogram is:" << std::endl;
-        for (const auto reg : sketch.registers()) {
+        for (const auto reg : registers) {
           std::cout << (int)reg << " ";
         }
         std::cout << std::endl;
@@ -218,7 +234,7 @@ struct empirical_histograms {
         std::cout << "\ttarget: " << target << std::endl;
       }
       std::stringstream ss;
-      ss << SketchType::full_name() << " register histogram check";
+      ss << sketch_type::full_name() << " register histogram check";
       CHECK_CONDITION(success == true, ss.str());
     }
 
@@ -238,11 +254,12 @@ struct do_experiment {
     print_line();
     std::cout << std::endl;
     krowkee::do_test<init_check<RangeSize>>();
-    do_test<empirical_histograms<hll_sketch_type<RangeSize>>>(params);
+    do_test<empirical_histograms<hll_sketch_type<RangeSize>, make_ptr_functor>>(
+        params);
 #if __has_include(<cereal/cereal.hpp>)
     do_test<serialize_check<RangeSize>>(params);
 #endif
-    krowkee::do_test<guarantee_check>(params);
+    krowkee::do_test<guarantee_check<make_ptr_functor>>(params);
     std::cout << std::endl;
   }
 };
