@@ -12,6 +12,8 @@
 #include <krowkee/transform/FWHT.hpp>
 #include <krowkee/transform/SparseJLT.hpp>
 
+#include <krowkee/merge/plus.hpp>
+
 #include <krowkee/sketch/Dense.hpp>
 #include <krowkee/sketch/Matrix.hpp>
 #include <krowkee/sketch/Promotable.hpp>
@@ -38,7 +40,8 @@ template <typename RegType, std::size_t RangeSize, std::size_t ReplicationCount,
 using SparseJLT = krowkee::sketch::Sketch<
     krowkee::transform::SparseJLT<RegType, krowkee::hash::CountSketchHash,
                                   RangeSize, ReplicationCount>,
-    krowkee::sketch::Dense<RegType, std::plus, RangeSize * ReplicationCount>,
+    krowkee::sketch::Dense<RegType, krowkee::merge::plus,
+                           RangeSize * ReplicationCount>,
     PtrType>;
 
 template <typename RegType, std::size_t RowRangeSize,
@@ -53,7 +56,7 @@ using DoubleSparseJLT = krowkee::sketch::Sketch<
                                       RowRangeSize, RowReplicationCount>,
         krowkee::transform::SparseJLT<RegType, krowkee::hash::CountSketchHash,
                                       ColRangeSize, ColReplicationCount>>,
-    krowkee::sketch::Matrix<RegType, std::plus,
+    krowkee::sketch::Matrix<RegType, krowkee::merge::plus,
                             RowRangeSize * RowReplicationCount,
                             ColRangeSize * ColReplicationCount>,
     PtrType>;
@@ -62,7 +65,8 @@ template <typename RegType, std::size_t RangeSize, std::size_t ReplicationCount,
           template <typename> class PtrType = std::shared_ptr>
 using FWHT = krowkee::sketch::Sketch<
     krowkee::transform::FWHT<RegType, RangeSize, ReplicationCount>,
-    krowkee::sketch::Dense<RegType, std::plus, RangeSize * ReplicationCount>,
+    krowkee::sketch::Dense<RegType, krowkee::merge::plus,
+                           RangeSize * ReplicationCount>,
     PtrType>;
 
 namespace sparse {
@@ -73,8 +77,9 @@ template <typename RegType, std::size_t RangeSize, std::size_t ReplicationCount,
 using SparseJLT = krowkee::sketch::Sketch<
     krowkee::transform::SparseJLT<RegType, krowkee::hash::CountSketchHash,
                                   RangeSize, ReplicationCount>,
-    krowkee::sketch::Sparse<RegType, std::plus, MapType, std::uint32_t,
-                            RangeSize * ReplicationCount, CompactionThreshold>,
+    krowkee::sketch::Sparse<RegType, krowkee::merge::plus, MapType,
+                            std::uint32_t, RangeSize * ReplicationCount,
+                            CompactionThreshold>,
     PtrType>;
 
 }  // namespace sparse
@@ -87,8 +92,8 @@ template <typename RegType, std::size_t RangeSize, std::size_t ReplicationCount,
 using SparseJLT = krowkee::sketch::Sketch<
     krowkee::transform::SparseJLT<RegType, krowkee::hash::CountSketchHash,
                                   RangeSize, ReplicationCount>,
-    krowkee::sketch::Promotable<RegType, std::plus, MapType, std::uint32_t,
-                                RangeSize * ReplicationCount,
+    krowkee::sketch::Promotable<RegType, krowkee::merge::plus, MapType,
+                                std::uint32_t, RangeSize * ReplicationCount,
                                 CompactionThreshold, PromotionThreshold>,
     PtrType>;
 

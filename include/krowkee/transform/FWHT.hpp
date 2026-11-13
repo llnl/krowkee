@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <krowkee/merge/plus.hpp>
 #include <krowkee/transform/fwht/utils.hpp>
 
 #include <krowkee/transform/Element.hpp>
@@ -97,7 +98,7 @@ class FWHT {
       auto        begin  = std::begin(registers) + offset;
       auto        end    = begin + range_size();
       std::transform(begin, end, std::begin(sketch_vec), begin,
-                     std::plus<RegType>());
+                     krowkee::merge::plus<RegType>());
       seed = krowkee::hash::wang64(seed);
     }
   }

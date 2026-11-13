@@ -132,7 +132,8 @@ class Dense {
   constexpr void merge(const self_type &rhs) {
     // this can be done ifless by wrapping operators into krowkee structs.
     // TODO: make it so
-    if constexpr (std::is_same<merge_type, std::plus<register_type>>::value) {
+    if constexpr (std::is_same<merge_type,
+                               krowkee::merge::plus<register_type>>::value) {
       _registers += rhs._registers;
     } else {
       // wowee this is dangerous
