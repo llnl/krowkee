@@ -8,9 +8,10 @@
 #include <sketch_types.hpp>
 
 #include <krowkee/hash/hll.hpp>
+#include <krowkee/merge/max.hpp>
 #include <krowkee/sketch/Dense.hpp>
 #include <krowkee/sketch/Sketch.hpp>
-#include <krowkee/transform/hll.hpp>
+#include <krowkee/transform/HyperLogLog.hpp>
 
 #include <krowkee/util/runtime.hpp>
 
@@ -97,19 +98,11 @@ struct serialize_hash_check {
 
 /// here begins sketch data structure-aware tests.
 
-namespace krowkee {
-template <class T>
-struct max {
-  constexpr T operator()(const T &lhs, const T &rhs) const {
-    return std::max(lhs, rhs);
-  }
-};
-}  // namespace krowkee
-
 template <std::size_t RangeSize>
 using hll_sketch_type = krowkee::sketch::Sketch<
     krowkee::transform::HyperLogLog<std::uint8_t, hll_hash32_type, RangeSize>,
-    krowkee::sketch::Dense<std::uint8_t, krowkee::max, RangeSize>, ptr_type>;
+    krowkee::sketch::Dense<std::uint8_t, krowkee::merge::max, RangeSize>,
+    ptr_type>;
 
 template <typename SketchType, template <typename> class MakePtrFunc>
 struct init_check : krowkee::test::init_check<SketchType> {
