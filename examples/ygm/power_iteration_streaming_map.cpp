@@ -3,8 +3,9 @@
 //
 // SPDX-License-Identifier: MIT
 
+#include <krowkee/DoubleSparseJLT.hpp>
+#include <krowkee/SparseJLT.hpp>
 #include <krowkee/hash/hash.hpp>
-#include <krowkee/sketch.hpp>
 #include <krowkee/util/runtime.hpp>
 
 #include <ygm/comm.hpp>
@@ -46,8 +47,8 @@ int main(int argc, char **argv) {
     // Using krowkee requires the selection of a sketch type for both a single
     // and double-sided sketch, here encapsulated as `single_sketch_type` and
     // `double_sketch_type`, respectively. We use the `SparseJLT` and
-    // `DoubleSparseJLT` types defined in the simple API in
-    // `krowkee/sketch.hpp`. These types have four template parameters:
+    // `DoubleSparseJLT` types defined in the simple APIs in krowkee's top level
+    // include directory. These types have four template parameters:
     //   1. the numeric type to be used by each register (here `double`),
     //   2. a `std::size_t` parameter `range_size` indicating the number of
     //      registers used by each instance of the internal transform,

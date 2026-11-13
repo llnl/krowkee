@@ -3,15 +3,13 @@
 //
 // SPDX-License-Identifier: MIT
 
-// Klugy, but includes need to be in this order.
-
-#include <krowkee/sketch.hpp>
+#include <krowkee/SparseJLT.hpp>
 
 #include <type_traits>
 
 // Krowkee provides the relatively simple sketch interfaces available in the
-// header `krowkee/sketch.hpp`. These include the `krowkee::sketch::SparseJLT`
-// used in `examples/sparse_jlt.cpp` and `krowkee::sketch::FWHT`. These types
+// top level directory headers `krowkee::sketch::SparseJLT` used in
+// `examples/sparse_jlt.cpp` and `krowkee::sketch::FWHT`. These types
 // consolidate the component parts (the transform, the container, and the
 // sketch chassis) and reduce them to more easily addressable aliases that
 // reflect the most common sketch decisions. Most applications need only use

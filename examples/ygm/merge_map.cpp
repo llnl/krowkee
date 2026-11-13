@@ -3,8 +3,8 @@
 //
 // SPDX-License-Identifier: MIT
 
+#include <krowkee/SparseJLT.hpp>
 #include <krowkee/hash/hash.hpp>
-#include <krowkee/sketch.hpp>
 
 #include <ygm/comm.hpp>
 #include <ygm/container/map.hpp>

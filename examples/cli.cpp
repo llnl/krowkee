@@ -5,7 +5,7 @@
 
 // Klugy, but includes need to be in this order.
 
-#include <krowkee/sketch.hpp>
+#include <krowkee/SparseJLT.hpp>
 #include <krowkee/util/parameters.hpp>
 #include <krowkee/util/runtime.hpp>
 
