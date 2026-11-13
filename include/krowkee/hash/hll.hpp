@@ -14,6 +14,16 @@
 
 namespace krowkee::hash {
 
+/**
+ * HyperLogLog hash base class
+ *
+ * A fast implementation of the 32bit HyperLogLog hash operators. Returns a pair
+ * of hash values into the register space [0, R] and [0, M], where R is the
+ * number of registers - 1 and M is the maximum number of allowed leading zeros,
+ * respectively.
+ *
+ * @tparam RangeSize The power-of-two register count.
+ */
 template <std::size_t RangeSize>
 struct HyperLogLogHash32 {
   using index_type      = std::uint32_t;
