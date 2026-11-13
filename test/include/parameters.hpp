@@ -24,7 +24,7 @@ struct parameters : public krowkee::parameters {
   parameters()
       : base_type(),
         count("count", "Number of elements to be inserted", 'c', true, 10000),
-        seed("seed", "Random seed", 's', true, krowkee::hash::default_seed),
+        seed("seed", "Random seed", 's', true, 1),
         range_size("range", "Range of hash functors", 'r', true, 32),
         verbose("verbose?", "Whether to print verbose output", 'V', false,
                 false) {

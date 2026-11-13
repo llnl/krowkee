@@ -3,15 +3,13 @@
 //
 // SPDX-License-Identifier: MIT
 
-// Klugy, but includes need to be in this order.
-
-#include <krowkee/sketch.hpp>
+#include <krowkee/SparseJLT.hpp>
 
 #include <type_traits>
 
 // Krowkee provides the relatively simple sketch interfaces available in the
-// header `krowkee/sketch.hpp`. These include the `krowkee::sketch::SparseJLT`
-// used in `examples/sparse_jlt.cpp` and `krowkee::sketch::FWHT`. These types
+// top level directory headers `krowkee::sketch::SparseJLT` used in
+// `examples/sparse_jlt.cpp` and `krowkee::sketch::FWHT`. These types
 // consolidate the component parts (the transform, the container, and the
 // sketch chassis) and reduce them to more easily addressable aliases that
 // reflect the most common sketch decisions. Most applications need only use
@@ -59,7 +57,7 @@ using transform_type =
 // `range_size * replication_count`. In addition to the register type, it
 // requires a merge operator that governs how two sketches of the same type are
 // merged.
-using dense_type = krowkee::sketch::Dense<register_type, std::plus,
+using dense_type = krowkee::sketch::Dense<register_type, krowkee::merge::plus,
                                           range_size * replication_count>;
 
 // Finally, the `krowkee::sketch::Sketch` class requires a shared pointer type
@@ -70,7 +68,7 @@ using dense_type = krowkee::sketch::Dense<register_type, std::plus,
 using verbose_sketch_type = krowkee::sketch::Sketch<
     krowkee::transform::SparseJLT<register_type, krowkee::hash::CountSketchHash,
                                   range_size, replication_count>,
-    krowkee::sketch::Dense<register_type, std::plus,
+    krowkee::sketch::Dense<register_type, krowkee::merge::plus,
                            range_size * replication_count>,
     std::shared_ptr>;
 

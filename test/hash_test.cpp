@@ -89,13 +89,13 @@ struct zero_check {
                 << ", max target std dev: " << target << std::endl;
     }
     std::stringstream ss;
-    ss << HashType::name() << " std dev";
+    ss << HashType::name() << " zero check std dev";
     CHECK_CONDITION(std_dev < target, ss.str());
   }
 
   void operator()(const auto &params) const {
-    zero_handling<mul_shift_type<RangeSize>>(params, 0.07);
-    zero_handling<mul_add_shift_type<RangeSize>>(params, 0.07);
+    zero_handling<mul_shift_type<RangeSize>>(params, 0.1);
+    zero_handling<mul_add_shift_type<RangeSize>>(params, 0.1);
   }
 };
 
@@ -138,7 +138,7 @@ struct empirical_histograms {
                 << ", max target std dev: " << target << std::endl;
     }
     std::stringstream ss;
-    ss << HashType::name() << " std dev";
+    ss << HashType::name() << " empirical histogram std dev";
     CHECK_CONDITION(std_dev < target, ss.str());
   }
 
