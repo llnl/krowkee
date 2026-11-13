@@ -13,5 +13,11 @@ struct max {
   constexpr T operator()(const T &lhs, const T &rhs) const {
     return std::max(lhs, rhs);
   }
+
+  template <typename ContainerType>
+  static constexpr void eigen_inplace_merge(ContainerType       &lhs,
+                                            const ContainerType &rhs) {
+    lhs = lhs.cwiseMax(rhs);
+  }
 };
 }  // namespace krowkee::merge

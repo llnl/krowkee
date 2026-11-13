@@ -130,15 +130,7 @@ class Dense {
    * @throws std::invalid_argument if the register sizes do not match.
    */
   constexpr void merge(const self_type &rhs) {
-    // this can be done ifless by wrapping operators into krowkee structs.
-    // TODO: make it so
-    if constexpr (std::is_same<merge_type,
-                               krowkee::merge::plus<register_type>>::value) {
-      _registers += rhs._registers;
-    } else {
-      // wowee this is dangerous
-      _registers = _registers.cwiseMax(rhs._registers);
-    }
+    merge_type::eigen_inplace_merge(_registers, rhs._registers);
   }
 
   /**

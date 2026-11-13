@@ -9,5 +9,11 @@
 
 namespace krowkee::merge {
 template <class T>
-struct plus : public std::plus<T> {};
+struct plus : public std::plus<T> {
+  template <typename ContainerType>
+  static constexpr void eigen_inplace_merge(ContainerType       &lhs,
+                                            const ContainerType &rhs) {
+    lhs += rhs;
+  }
+};
 }  // namespace krowkee::merge
