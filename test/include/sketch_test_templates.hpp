@@ -163,6 +163,43 @@ struct good_merge_check {
     }
   }
 
+  void chirp(bool success, std::string &&first_name, sketch_type &first,
+             std::string &&second_name, sketch_type &second,
+             std::string &&lhs_name, sketch_type &lhs, std::string &&rhs_name,
+             sketch_type &rhs, std::size_t &size) const {
+    if (success == false) {
+      std::cout << "fails with mean absolute error "
+                << krowkee::sketch::detail::mean_absolute_error(
+                       lhs.container().registers(), rhs.container().registers())
+                << std::endl;
+      if (size <= 256) {
+        std::cout << first_name << ": " << std::endl
+                  << first << std::endl
+                  << std::endl;
+        std::cout << second_name << ": " << std::endl
+                  << second << std::endl
+                  << std::endl;
+        std::cout << lhs_name << ": " << std::endl
+                  << lhs << std::endl
+                  << std::endl;
+        std::cout << rhs_name << ": " << std::endl
+                  << rhs << std::endl
+                  << std::endl;
+      }
+    }
+  }
+
+  /**
+   * @brief Assumes that inputs sketches accumulated over two disjoint sets of
+   * items A and B.
+   *
+   * @param sketch_A A sketch over a set A
+   * @param sketch_B A sketch over set B
+   * @param sketch_C Another sketch over set B
+   * @param sketch_AB A sketch over set :math:`A \cup B`
+   * @param sketch_ABC A sketch over set :math:`A \cup B` with B inserted a
+   * second time.
+   */
   void run_tests(sketch_type &sketch_A, sketch_type &sketch_B,
                  sketch_type &sketch_C, sketch_type &sketch_AB,
                  sketch_type &sketch_ABC) const {
@@ -177,7 +214,8 @@ struct good_merge_check {
     std::size_t size = sketch_A.size();
     {
       bool merge_success = sketch_AB == merge_AB;
-      chirp(merge_success, "merge_AB", merge_AB, "sketch_AB", sketch_AB, size);
+      chirp(merge_success, "sketch_A", sketch_A, "sketch_B", sketch_B,
+            "merge_AB", merge_AB, "sketch_AB", sketch_AB, size);
       CHECK_CONDITION(merge_success == true, "merge (+)");
     }
     {

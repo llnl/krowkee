@@ -152,6 +152,42 @@ struct bad_merge_check : public krowkee::test::bad_merge_check<SketchType> {
   }
 };
 
+/**
+ * Verify that merge (+/+=) operators work as expected.
+ */
+template <typename SketchType, template <typename> class MakePtrFunc>
+struct good_merge_check : krowkee::test::good_merge_check<SketchType> {
+  using sketch_type        = SketchType;
+  using transform_type     = typename sketch_type::transform_type;
+  using transform_ptr_type = typename sketch_type::transform_ptr_type;
+  using make_ptr_type      = MakePtrFunc<transform_type>;
+
+  void operator()(const auto &params) const {
+    make_ptr_type      _make_ptr = make_ptr_type();
+    transform_ptr_type transform_ptr(_make_ptr(8));
+    sketch_type        sketch_A(transform_ptr);
+    sketch_type        sketch_B(transform_ptr);
+    sketch_type        sketch_C(transform_ptr);
+    sketch_type        sketch_AB(transform_ptr);
+    sketch_type        sketch_ABC(transform_ptr);
+    for (std::uint64_t i(0); i < 1000; ++i) {
+      sketch_A.insert(i);
+      sketch_AB.insert(i);
+      sketch_ABC.insert(i);
+    }
+    for (std::uint64_t i(1000); i < 2000; ++i) {
+      sketch_B.insert(i);
+      sketch_AB.insert(i);
+      sketch_ABC.insert(i);
+    }
+    for (std::uint64_t i(1000); i < 2000; ++i) {
+      sketch_C.insert(i);
+      sketch_ABC.insert(i);
+    }
+    this->run_tests(sketch_A, sketch_B, sketch_C, sketch_AB, sketch_ABC);
+  }
+};
+
 template <template <typename> class MakePtrFunc>
 struct guarantee_check {
   const char *name() { return "HLL guarantee check"; }
@@ -303,6 +339,8 @@ struct do_experiment {
     krowkee::do_test<init_hash_check<RangeSize>>();
     do_test<init_check<hll_sketch_type<RangeSize>, make_ptr_functor>>(params);
     do_test<bad_merge_check<hll_sketch_type<RangeSize>, make_ptr_functor>>(
+        params);
+    do_test<good_merge_check<hll_sketch_type<RangeSize>, make_ptr_functor>>(
         params);
     do_test<empirical_histograms<hll_sketch_type<RangeSize>, make_ptr_functor>>(
         params);

@@ -129,7 +129,16 @@ class Dense {
    * merge sketches of different types.
    * @throws std::invalid_argument if the register sizes do not match.
    */
-  constexpr void merge(const self_type &rhs) { _registers += rhs._registers; }
+  constexpr void merge(const self_type &rhs) {
+    // this can be done ifless by wrapping operators into krowkee structs.
+    // TODO: make it so
+    if constexpr (std::is_same<merge_type, std::plus<register_type>>::value) {
+      _registers += rhs._registers;
+    } else {
+      // wowee this is dangerous
+      _registers = _registers.cwiseMax(rhs._registers);
+    }
+  }
 
   /**
    * @brief Operator overload for convenience for embeddings without additional
