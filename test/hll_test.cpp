@@ -13,6 +13,8 @@
 #include <krowkee/sketch/Sketch.hpp>
 #include <krowkee/transform/HyperLogLog.hpp>
 
+#include <krowkee/HyperLogLog.hpp>
+
 #include <krowkee/util/runtime.hpp>
 
 #if __has_include(<cereal/cereal.hpp>)
@@ -99,10 +101,8 @@ struct serialize_hash_check {
 /// here begins sketch data structure-aware tests.
 
 template <std::size_t RangeSize>
-using hll_sketch_type = krowkee::sketch::Sketch<
-    krowkee::transform::HyperLogLog<std::uint8_t, hll_hash32_type, RangeSize>,
-    krowkee::sketch::Dense<std::uint8_t, krowkee::merge::max, RangeSize>,
-    ptr_type>;
+using hll_sketch_type =
+    krowkee::sketch::HyperLogLog32<std::uint8_t, RangeSize, ptr_type>;
 
 template <typename SketchType, template <typename> class MakePtrFunc>
 struct init_check : krowkee::test::init_check<SketchType> {
