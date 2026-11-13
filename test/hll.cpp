@@ -188,6 +188,26 @@ struct good_merge_check : krowkee::test::good_merge_check<SketchType> {
   }
 };
 
+#if __has_include(<cereal/cereal.hpp>)
+template <typename SketchType, template <typename> class MakePtrFunc>
+struct serialize_check : krowkee::test::serialize_check<SketchType> {
+  using sketch_type        = SketchType;
+  using transform_type     = typename sketch_type::transform_type;
+  using transform_ptr_type = typename sketch_type::transform_ptr_type;
+  using make_ptr_type      = MakePtrFunc<transform_type>;
+
+  void operator()(const auto &params) const {
+    make_ptr_type      _make_ptr{};
+    transform_ptr_type transform_ptr(_make_ptr(params.seed()));
+
+    sketch_type sketch(transform_ptr);
+    for (std::uint64_t i(0); i < params.count(); sketch.insert(i++)) {
+    }
+    this->run_tests(*transform_ptr, sketch);
+  }
+};
+#endif
+
 template <template <typename> class MakePtrFunc>
 struct guarantee_check {
   const char *name() { return "HLL guarantee check"; }
@@ -328,6 +348,7 @@ struct empirical_histograms {
 template <std::size_t RangeSize>
 struct do_experiment {
   void operator()(const auto &params) {
+    using sketch_type = hll_sketch_type<RangeSize>;
     print_line();
     print_line();
     std::cout << " Experimenting with " << params.count()
@@ -337,15 +358,13 @@ struct do_experiment {
     print_line();
     std::cout << std::endl;
     krowkee::do_test<init_hash_check<RangeSize>>();
-    do_test<init_check<hll_sketch_type<RangeSize>, make_ptr_functor>>(params);
-    do_test<bad_merge_check<hll_sketch_type<RangeSize>, make_ptr_functor>>(
-        params);
-    do_test<good_merge_check<hll_sketch_type<RangeSize>, make_ptr_functor>>(
-        params);
-    do_test<empirical_histograms<hll_sketch_type<RangeSize>, make_ptr_functor>>(
-        params);
+    do_test<init_check<sketch_type, make_ptr_functor>>(params);
+    do_test<bad_merge_check<sketch_type, make_ptr_functor>>(params);
+    do_test<good_merge_check<sketch_type, make_ptr_functor>>(params);
+    do_test<empirical_histograms<sketch_type, make_ptr_functor>>(params);
 #if __has_include(<cereal/cereal.hpp>)
     do_test<serialize_hash_check<RangeSize>>(params);
+    do_test<serialize_check<sketch_type, make_ptr_functor>>(params);
 #endif
     krowkee::do_test<guarantee_check<make_ptr_functor>>(params);
     std::cout << std::endl;
