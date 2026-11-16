@@ -5,7 +5,12 @@
 
 #pragma once
 
-#include <krowkee/sketch.hpp>
+#include <krowkee/DoubleSparseJLT.hpp>
+#include <krowkee/FWHT.hpp>
+#include <krowkee/PromotableSparseJLT.hpp>
+#include <krowkee/SparseJLT.hpp>
+#include <krowkee/SparseSparseJLT.hpp>
+
 #include <krowkee/util/runtime.hpp>
 
 #if __has_include(<ygm/comm.hpp>)

@@ -3,7 +3,7 @@
 //
 // SPDX-License-Identifier: MIT
 
-#include <krowkee/sketch.hpp>
+#include <krowkee/SparseJLT.hpp>
 
 #include <iostream>
 #include <random>

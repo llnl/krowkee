@@ -7,8 +7,10 @@
 
 #include <graph.hpp>
 
+#include <krowkee/PromotableSparseJLT.hpp>
+#include <krowkee/SparseJLT.hpp>
+#include <krowkee/SparseSparseJLT.hpp>
 #include <krowkee/hash/hash.hpp>
-#include <krowkee/sketch.hpp>
 
 template <typename SketchType, typename ValueType>
 struct HistSketch {

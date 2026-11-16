@@ -99,7 +99,6 @@ struct CountSketchHash {
   friend void swap(self_type &lhs, self_type &rhs) {
     std::swap(lhs._register_hash, rhs._register_hash);
     std::swap(lhs._polarity_hash, rhs._polarity_hash);
-    lhs.swap(rhs);
   }
   friend constexpr bool operator==(const self_type &lhs, const self_type &rhs) {
     return lhs._register_hash == rhs._register_hash &&

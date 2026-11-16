@@ -11,7 +11,7 @@
 
 #include <krowkee/util/eigen.hpp>
 
-#include <algorithm>
+#include <numeric>
 #include <sstream>
 #include <vector>
 
@@ -129,7 +129,9 @@ class Dense {
    * merge sketches of different types.
    * @throws std::invalid_argument if the register sizes do not match.
    */
-  constexpr void merge(const self_type &rhs) { _registers += rhs._registers; }
+  constexpr void merge(const self_type &rhs) {
+    merge_type::eigen_inplace_merge(_registers, rhs._registers);
+  }
 
   /**
    * @brief Operator overload for convenience for embeddings without additional
