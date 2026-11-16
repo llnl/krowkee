@@ -106,7 +106,7 @@ class Sketch {
    * @return const container_type& A reference to the internal register
    * container object.
    */
-  const container_type &container() { return _container; }
+  const container_type &container() const { return _container; }
 
   registers_type scaled_registers() const {
     return _container.scaled_registers(transform_type::scaling_factor);
