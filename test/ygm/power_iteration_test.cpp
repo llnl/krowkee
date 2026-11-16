@@ -806,7 +806,8 @@ int main(int argc, char **argv) {
     constexpr const std::size_t internal_range_size        = 128;
     constexpr const std::size_t internal_replication_count = 4;
 
-    parameters params = krowkee::test::chirp_parameters<parameters>(argc, argv);
+    parameters params =
+        krowkee::test::chirp_parameters<parameters>(world, argc, argv);
     params.count.set(256);
     params.range_size.set(range_size);
     params.range_size.set(replication_count);

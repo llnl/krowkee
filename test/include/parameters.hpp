@@ -7,6 +7,10 @@
 
 #include <krowkee/util/parameters.hpp>
 
+#if __has_include(<ygm/comm.hpp>)
+#include <ygm/comm.hpp>
+#endif
+
 namespace krowkee::test {
 
 namespace hash {
@@ -99,4 +103,17 @@ Parameters chirp_parameters(int argc, char **argv) {
   }
   return params;
 }
+
+#if __has_include(<ygm/comm.hpp>)
+template <typename Parameters>
+Parameters chirp_parameters(ygm::comm &comm, int argc, char **argv) {
+  Parameters params = krowkee::parse_cmd_line<Parameters>(argc, argv);
+
+  if (params.verbose()) {
+    comm.cout0(params);
+  }
+  return params;
+}
+#endif
+
 }  // namespace krowkee::test

@@ -48,38 +48,44 @@ struct guarantee_check {
     }
   }
 
+  struct guarantee_results {
+    double est;
+    double err;
+    bool   success;
+
+    template <typename SketchType>
+    guarantee_results(const SketchType &sketch, const double target,
+                      const double thresh)
+        : est(SketchType::transform_type::estimate(sketch.container())),
+          err(std::abs(target - est) / target),
+          success(err < thresh) {}
+  };
+
   template <std::size_t RangeSize>
-  void check_guarantee(ygm::comm &comm, const auto &params) {
+  void check_guarantee(ygm::comm &comm, const auto &params) const {
     using sketch_type        = hll_sketch_type<RangeSize>;
     using transform_type     = typename sketch_type::transform_type;
     using transform_ptr_type = typename sketch_type::transform_ptr_type;
     using make_ptr_type      = MakePtrFunc<transform_type>;
 
-    const int     iteration_count(10);
-    const double  target_rate(0.5);
-    double        mean_err(0.0);
-    double        success_rate(0.0);
-    double        thresh = 1.5 * (1.04 / std::sqrt(RangeSize));
-    make_ptr_type _make_ptr{};
-    for (int i(0); i < iteration_count; ++i) {
-      transform_ptr_type transform_ptr(_make_ptr(params.seed() + i));
-      sketch_type        sketch(transform_ptr);
-      for (std::uint64_t j(0); j < params.count(); ++j) {
-        sketch.insert(j);
-      }
-
-      double est     = transform_type::estimate(sketch.container());
-      double err     = std::abs(params.count() - est) / params.count();
-      bool   success = err < thresh;
-      mean_err += err;
-      success_rate += success;
-      if (i == 0) {
-        chirp(comm, params, "\t(tru, est, err): (", params.count(), ", ", est,
-              ", ", err, ")");
-      }
+    const int          world_size = comm.size();
+    const int          rank       = comm.rank();
+    const double       target_rate(0.5);
+    const double       thresh = 1.5 * (1.04 / std::sqrt(RangeSize));
+    make_ptr_type      _make_ptr{};
+    transform_ptr_type transform_ptr(_make_ptr(params.seed() + rank));
+    sketch_type        sketch(transform_ptr);
+    for (std::uint64_t j(0); j < params.count(); ++j) {
+      sketch.insert(j);
     }
-    mean_err /= iteration_count;
-    success_rate /= iteration_count;
+
+    guarantee_results res(sketch, params.count(), thresh);
+    chirp(comm, params, "\t(tru, est, err): (", params.count(), ", ", res.est,
+          ", ", res.err, ")");
+    double mean_err     = ygm::sum(res.err, comm);
+    double success_rate = ygm::sum((double)res.success, comm);
+    mean_err /= world_size;
+    success_rate /= world_size;
     chirp(comm, params, "\t(range_size, mean err, threshold, success_rate) (",
           RangeSize, ", ", mean_err, ", ", thresh, ", ", success_rate, ")");
     {
@@ -146,7 +152,8 @@ int main(int argc, char **argv) {
     //   4. a shared pointer type to be used by the shared transform object
     //      (`std::shared_ptr` for shared memory implementations).
 
-    parameters params = krowkee::test::chirp_parameters<parameters>(argc, argv);
+    parameters params =
+        krowkee::test::chirp_parameters<parameters>(world, argc, argv);
 
     perform_tests(world, params);
   }
