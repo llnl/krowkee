@@ -33,9 +33,12 @@ using hll_sketch_type =
 
 template <template <typename> class MakePtrFunc>
 struct guarantee_check {
+  using Universe = std::map<unsigned int, std::set<unsigned int>>;
+
   const char *name() { return "HLL guarantee check"; }
 
-  void operator()(ygm::comm &comm, const auto params) {
+  void operator()(ygm::comm &comm, const auto &params) const {
+    test_universe(comm, params, 5, 3);
     check_guarantee<32>(comm, params);
     check_guarantee<128>(comm, params);
     check_guarantee<512>(comm, params);
@@ -46,6 +49,92 @@ struct guarantee_check {
     if (params.verbose()) {
       comm.cout0(args...);
     }
+  }
+
+  void check_universe_sizes(ygm::comm &comm, const auto &params,
+                            const Universe &universe, const int level,
+                            const int target) const {
+    chirp(comm, params, "universe ", level, " size: ", universe.size());
+    bool success = true;
+    for (const auto &[idx, set] : universe) {
+      if (params.verbose()) {
+        std::stringstream ss;
+        ss << "set " << idx << " (size " << set.size() << "):\t";
+        for (const unsigned int &elt : set) {
+          ss << elt << " ";
+        }
+        comm.cout0(ss.str());
+      }
+      success = (set.size() == target);
+    }
+    std::stringstream ss;
+    ss << "set universe level " << level << " size";
+    CHECK_CONDITION(comm, success == true, ss.str());
+  }
+
+  void test_universe(ygm::comm &comm, const auto &params,
+                     const unsigned int coeff,
+                     const unsigned int exponent) const {
+    unsigned int target   = coeff;
+    Universe     universe = build_universe(coeff, exponent);
+    check_universe_sizes(comm, params, universe, 0, target);
+    for (unsigned int level(1); level <= exponent; ++level) {
+      universe = get_next_universe(universe);
+      target *= 2;
+      check_universe_sizes(comm, params, universe, level, target);
+    }
+  }
+
+  Universe get_next_universe(const Universe &last_universe) const {
+    Universe next_universe;
+
+    for (const auto &[i, neighbors] : last_universe) {
+      auto &next_neighbors = next_universe[i];
+      next_neighbors       = neighbors;
+
+      for (unsigned int j : neighbors) {
+        const auto &j_neighbors = last_universe.at(j);
+        next_neighbors.insert(j_neighbors.begin(), j_neighbors.end());
+      }
+    }
+
+    return next_universe;
+  }
+
+  unsigned int universe_size(unsigned int c, unsigned int k) const {
+    const unsigned int  H   = 1u << k;
+    const std::uint64_t n64 = static_cast<std::uint64_t>(c) * H;
+
+    if (n64 > std::numeric_limits<unsigned int>::max()) {
+      throw std::overflow_error("c * 2^k does not fit in unsigned int");
+    }
+
+    return static_cast<unsigned int>(n64);
+  }
+
+  Universe build_universe(unsigned int c, unsigned int k) const {
+    if (k >= 16) {
+      throw std::invalid_argument("k must be less than 16");
+    }
+    const unsigned int n = universe_size(c, k);
+    const unsigned int H = 1u << k;
+    Universe           universe;
+
+    // Label each vertex (a, h) as a * H + h.
+    // Its initial set contains every (b, h + 1 mod H).
+    for (unsigned int a = 0; a < c; ++a) {
+      for (unsigned int h = 0; h < H; ++h) {
+        const unsigned int i         = a * H + h;
+        auto              &neighbors = universe[i];
+
+        const unsigned int next_h = (h + 1) % H;
+        for (unsigned int b = 0; b < c; ++b) {
+          neighbors.insert(b * H + next_h);
+        }
+      }
+    }
+
+    return universe;
   }
 
   template <typename ContainerType>
