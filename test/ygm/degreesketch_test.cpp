@@ -36,8 +36,8 @@ struct guarantee_check {
   const char *name() { return "HLL guarantee check"; }
 
   void operator()(ygm::comm &comm, const auto params) {
-    check_guarantee<16>(comm, params);
-    check_guarantee<64>(comm, params);
+    check_guarantee<32>(comm, params);
+    check_guarantee<128>(comm, params);
     check_guarantee<512>(comm, params);
   }
 
@@ -48,18 +48,50 @@ struct guarantee_check {
     }
   }
 
-  struct guarantee_results {
-    double est;
-    double err;
-    bool   success;
+  template <typename SketchType>
+  void test_level_guarantee(ygm::comm &comm, const auto &params,
+                            const SketchType &sketch, const double target,
+                            const double target_rate, const int level) const {
+    const int         world_size = comm.size();
+    const std::size_t range_size = SketchType::range_size();
+    const std::string full_name  = SketchType::full_name();
+    const double      thresh     = 1.5 * (1.04 / std::sqrt(range_size));
 
-    template <typename SketchType>
-    guarantee_results(const SketchType &sketch, const double target,
-                      const double thresh)
-        : est(SketchType::transform_type::estimate(sketch.container())),
-          err(std::abs(target - est) / target),
-          success(err < thresh) {}
-  };
+    double est = SketchType::transform_type::estimate(sketch.container());
+    double err = std::abs(target - est) / target;
+
+    bool guarantee_success = (err < thresh);
+
+    chirp(comm, params, "\tLevel ", level, " (tru, est, err): (",
+          params.count(), ", ", est, ", ", err, ")");
+    double mean_err = ygm::sum(err, comm) / world_size;
+    double success_rate =
+        ygm::sum((double)guarantee_success, comm) / world_size;
+    chirp(comm, params, "\t(range_size, mean err, threshold, success_rate) (",
+          range_size, ", ", mean_err, ", ", thresh, ", ", success_rate, ")");
+    {
+      bool success = (mean_err < thresh);
+      if (success == false) {
+        comm.cout0("Level ", level, " mean estimated error is ", mean_err,
+                   ", which exceeds expected threshold of ", thresh);
+      }
+      std::stringstream ss;
+      ss << full_name << " Level " << level
+         << " mean estimated error threshold";
+      CHECK_CONDITION(comm, success == true, ss.str());
+    }
+    {
+      bool success = (success_rate >= target_rate);
+      if (success == false) {
+        comm.cout0("Level ", level, " estimates achieve guarantee with rate ",
+                   success_rate, ", which is below expected threshold of ",
+                   target_rate);
+      }
+      std::stringstream ss;
+      ss << full_name << " Level " << level << " guarantee success rate";
+      CHECK_CONDITION(comm, success == true, ss.str());
+    }
+  }
 
   template <std::size_t RangeSize>
   void check_guarantee(ygm::comm &comm, const auto &params) const {
@@ -71,7 +103,6 @@ struct guarantee_check {
     const int          world_size = comm.size();
     const int          rank       = comm.rank();
     const double       target_rate(0.5);
-    const double       thresh = 1.5 * (1.04 / std::sqrt(RangeSize));
     make_ptr_type      _make_ptr{};
     transform_ptr_type transform_ptr(_make_ptr(params.seed() + rank));
     sketch_type        sketch(transform_ptr);
@@ -79,35 +110,7 @@ struct guarantee_check {
       sketch.insert(j);
     }
 
-    guarantee_results res(sketch, params.count(), thresh);
-    chirp(comm, params, "\t(tru, est, err): (", params.count(), ", ", res.est,
-          ", ", res.err, ")");
-    double mean_err     = ygm::sum(res.err, comm);
-    double success_rate = ygm::sum((double)res.success, comm);
-    mean_err /= world_size;
-    success_rate /= world_size;
-    chirp(comm, params, "\t(range_size, mean err, threshold, success_rate) (",
-          RangeSize, ", ", mean_err, ", ", thresh, ", ", success_rate, ")");
-    {
-      bool success = (mean_err < thresh);
-      if (success == false) {
-        comm.cout0("Mean estimated error is ", mean_err,
-                   ", which exceeds expected threshold of ", thresh);
-      }
-      std::stringstream ss;
-      ss << sketch_type::full_name() << " mean estimated error threshold";
-      CHECK_CONDITION(comm, success == true, ss.str());
-    }
-    {
-      bool success = (success_rate >= target_rate);
-      if (success == false) {
-        comm.cout0("Estimates achieve guarantee with rate ", success_rate,
-                   ", which is below expected threshold of ", target_rate);
-      }
-      std::stringstream ss;
-      ss << sketch_type::full_name() << " guarantee success rate";
-      CHECK_CONDITION(comm, success == true, ss.str());
-    }
+    test_level_guarantee(comm, params, sketch, params.count(), target_rate, 1);
 
     return;
   }
@@ -126,11 +129,6 @@ void perform_tests(ygm::comm &world, const auto &params) {
   world.cout0("\n");
 
   krowkee::do_ygm_test<guarantee_check<make_ptr_functor>>(world, world, params);
-
-  // krowkee::do_ygm_test<power_iteration_check<
-  //     single_sketch_type, double_sketch_type, final_sketch_type>>(world,
-  //     world,
-  //                                                                 params);
 }
 
 int main(int argc, char **argv) {
