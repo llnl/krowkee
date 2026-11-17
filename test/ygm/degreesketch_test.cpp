@@ -48,25 +48,37 @@ struct guarantee_check {
     }
   }
 
-  template <typename SketchType>
+  template <typename ContainerType>
   void test_level_guarantee(ygm::comm &comm, const auto &params,
-                            const SketchType &sketch, const double target,
+                            const ContainerType &universe, const double target,
                             const double target_rate, const int level) const {
-    const int         world_size = comm.size();
-    const std::size_t range_size = SketchType::range_size();
-    const std::string full_name  = SketchType::full_name();
-    const double      thresh     = 1.5 * (1.04 / std::sqrt(range_size));
+    using index_type               = typename ContainerType::key_type;
+    using sketch_type              = typename ContainerType::mapped_type;
+    const int         world_size   = comm.size();
+    const std::size_t range_size   = sketch_type::range_size();
+    const std::string full_name    = sketch_type::full_name();
+    const double      thresh       = 1.5 * (1.04 / std::sqrt(range_size));
+    double            mean_err     = 0.0;
+    double            success_rate = 0.0;
+    universe.for_all([&comm, &params, &target, &target_rate, &level,
+                      &world_size, &thresh, &mean_err, &success_rate](
+                         const index_type &idx, const sketch_type &sketch) {
+      double est = sketch_type::transform_type::estimate(sketch.container());
+      double err = std::abs(target - est) / target;
 
-    double est = SketchType::transform_type::estimate(sketch.container());
-    double err = std::abs(target - est) / target;
+      bool guarantee_success = (err < thresh);
 
-    bool guarantee_success = (err < thresh);
+      mean_err += err;
+      success_rate += guarantee_success;
+      if (idx == 0 & params.verbose()) {
+        comm.cout("\tLevel ", level, " (tru, est, err): (", target, ", ", est,
+                  ", ", err, ")");
+      }
+    });
+    comm.barrier();
 
-    chirp(comm, params, "\tLevel ", level, " (tru, est, err): (",
-          params.count(), ", ", est, ", ", err, ")");
-    double mean_err = ygm::sum(err, comm) / world_size;
-    double success_rate =
-        ygm::sum((double)guarantee_success, comm) / world_size;
+    mean_err     = ygm::sum(mean_err, comm) / world_size;
+    success_rate = ygm::sum(success_rate, comm) / world_size;
     chirp(comm, params, "\t(range_size, mean err, threshold, success_rate) (",
           range_size, ", ", mean_err, ", ", thresh, ", ", success_rate, ")");
     {
@@ -105,12 +117,15 @@ struct guarantee_check {
     const double       target_rate(0.5);
     make_ptr_type      _make_ptr{};
     transform_ptr_type transform_ptr(_make_ptr(params.seed() + rank));
-    sketch_type        sketch(transform_ptr);
+    ygm::container::map<const int, sketch_type> universe(comm);
+    sketch_type                                 sketch(transform_ptr);
     for (std::uint64_t j(0); j < params.count(); ++j) {
       sketch.insert(j);
     }
+    universe.async_insert(rank, sketch);
 
-    test_level_guarantee(comm, params, sketch, params.count(), target_rate, 1);
+    test_level_guarantee(comm, params, universe, params.count(), target_rate,
+                         1);
 
     return;
   }
