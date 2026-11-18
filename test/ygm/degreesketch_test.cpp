@@ -5,13 +5,6 @@
 
 #include <parameters.hpp>
 #include <sketch_test_templates.hpp>
-#include <sketch_types.hpp>
-
-#include <krowkee/hash/hll.hpp>
-#include <krowkee/merge/max.hpp>
-#include <krowkee/sketch/Dense.hpp>
-#include <krowkee/sketch/Sketch.hpp>
-#include <krowkee/transform/HyperLogLog.hpp>
 
 #include <krowkee/HyperLogLog.hpp>
 
@@ -19,11 +12,6 @@
 
 #include <ygm/comm.hpp>
 #include <ygm/container/map.hpp>
-
-#if __has_include(<cereal/cereal.hpp>)
-#include <cereal/types/base_class.hpp>
-#include <check_archive.hpp>
-#endif
 
 #include <cstdint>
 
