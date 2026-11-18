@@ -1,3 +1,4 @@
+add_krowkee_example(degreesketch)
 add_krowkee_example(embed)
 add_krowkee_example(sketch_map)
 add_krowkee_example(merge_map)

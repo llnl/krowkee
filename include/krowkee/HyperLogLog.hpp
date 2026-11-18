@@ -5,18 +5,12 @@
 
 #pragma once
 
-#include <krowkee/hash/countsketch.hpp>
-#include <krowkee/hash/hash.hpp>
-
-#include <krowkee/transform/SparseJLT.hpp>
-
-#include <krowkee/merge/plus.hpp>
-
+#include <krowkee/hash/hll.hpp>
+#include <krowkee/merge/max.hpp>
 #include <krowkee/sketch/Dense.hpp>
-
 #include <krowkee/sketch/Sketch.hpp>
+#include <krowkee/transform/HyperLogLog.hpp>
 
-#include <map>
 #include <memory>
 
 ////////////////////////////////////////////////////////////////////////////////

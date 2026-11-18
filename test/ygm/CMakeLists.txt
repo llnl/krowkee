@@ -33,4 +33,5 @@ function (add_ygm_krowkee_test test_name)
     endif ()
 endfunction ()
 
+add_ygm_krowkee_test(degreesketch_test)
 add_ygm_krowkee_test(power_iteration_test)
